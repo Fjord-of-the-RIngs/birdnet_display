@@ -19,9 +19,7 @@ That original project provided the foundation for a Raspberry Pi based BirdNET d
 - Detection audio support, including latest clip, best clip, spectrogram serving, per-species playback, first-detection playback, and periodic "chirp" style playback from today's detections.
 - Bird activity views backed by the local BirdNET database, including recent detections, all species detected today, all-time detections, species stats, and bird-day index endpoints.
 - Raspberry Pi hardware controls from the display UI, including screen brightness, reboot, shutdown, fan mode, fan speed, CPU temperature, and hardware fan-state feedback.
-- QR code overlay for quickly opening the display from another device on the network.
 - Offline and waiting-for-detections behavior using cached species images or placeholder photos instead of showing a blank screen.
-- Kiosk launcher, installer, access-point setup script, and included 3D-print files for a complete physical display build.
 
 ## Screenshots and Build Photos
 
