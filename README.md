@@ -25,6 +25,36 @@ That original project provided the foundation for a Raspberry Pi based BirdNET d
 
 ## Screenshots and Build Photos
 
+### Current UI Highlights
+
+Live recent detections on the touchscreen layout:
+
+![Current UI - Main Detections](images/ui-main-detections.png)
+
+Settings panel with layout, display mode, schedule, temperature, fan, and system controls:
+
+![Current UI - Settings](images/ui-settings.png)
+
+Per-species detail panel with latest recording, spectrogram, stats, image folder tools, uploads, and photo browser:
+
+![Current UI - Bird Details](images/ui-bird-details.png)
+
+All birds detected in the last 24 hours, with sorting and search:
+
+![Current UI - All Birds](images/ui-all-birds.png)
+
+All-time species view:
+
+![Current UI - All Time](images/ui-all-time.png)
+
+Bird Day Index analytics:
+
+![Current UI - Bird Day Index](images/ui-bird-day-index.png)
+
+QR access overlay:
+
+![Current UI - QR Overlay](images/ui-qr-overlay.png)
+
 ### Completed System
 
 Front:
@@ -38,24 +68,6 @@ Side:
 Internals:
 
 ![System Internals](images/system%20internals.png)
-
-### Interface
-
-Online mode:
-
-![Main Interface Online](images/main_interface_online.png)
-
-Offline mode:
-
-![Main Interface Offline](images/main_interface_offline.png)
-
-QR code overlay:
-
-![QR Code Overlay](images/qr%20code%20overlay.png)
-
-Settings modal:
-
-![Settings Modal](images/settings%20modal.png)
 
 ## Features
 
