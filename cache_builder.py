@@ -5,10 +5,11 @@ import requests
 from urllib.parse import urljoin, quote_plus
 from PIL import Image
 from bs4 import BeautifulSoup
+from path_config import PATHS
 
 # --- Constants and Configuration ---
-CACHE_DIRECTORY = "static/bird_images_cache"
-SPECIES_FILE = "species_list.csv" 
+CACHE_DIRECTORY = str(PATHS.image_cache_dir)
+SPECIES_FILE = str(PATHS.species_file)
 IMAGES_PER_SPECIES = 3
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -145,6 +146,7 @@ def resize_cached_images():
 
 # This allows the script to be run directly from the command line
 if __name__ == '__main__':
+    os.makedirs(CACHE_DIRECTORY, exist_ok=True)
     print("--- Starting Offline Image Cache Builder ---")
     ensure_cache_is_built()
     resize_cached_images()

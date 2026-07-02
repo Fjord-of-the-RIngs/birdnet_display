@@ -1,12 +1,15 @@
 # keep current 
 import requests
 import sqlite3
-from flask import Flask, render_template, send_file, request, jsonify
+from flask import Flask, render_template, send_file, send_from_directory, request, jsonify, session
 from urllib.parse import urljoin
 from datetime import datetime
 import os
 import random
 import socket
+import ipaddress
+import hmac
+import secrets
 import qrcode
 import io
 import json
@@ -14,15 +17,309 @@ import sys
 import re
 import subprocess
 import csv
+import uuid
 from datetime import datetime
 from pathlib import Path
 from werkzeug.utils import secure_filename
 import os
 from flask import jsonify, request, abort
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
+from functools import wraps
+from PIL import Image, UnidentifiedImageError
+from path_config import PATHS
 
-app = Flask(__name__, template_folder="static")
+app = Flask(
+    __name__,
+    template_folder=str(PATHS.static_dir),
+    static_folder=str(PATHS.static_dir),
+)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        print(f"[WARN] Ignoring invalid integer for {name}: {raw}")
+        return default
+    return value if value > 0 else default
+
+
+BIRDNET_UPLOAD_MAX_BYTES = _env_int("BIRDNET_UPLOAD_MAX_BYTES", 10 * 1024 * 1024)
+BIRDNET_UPLOAD_MAX_DIMENSION = _env_int("BIRDNET_UPLOAD_MAX_DIMENSION", 4096)
+BIRDNET_UPLOAD_MAX_PIXELS = _env_int("BIRDNET_UPLOAD_MAX_PIXELS", 8_847_360)
+app.config["MAX_CONTENT_LENGTH"] = BIRDNET_UPLOAD_MAX_BYTES
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_too_large(_exc):
+    return jsonify({"ok": False, "error": "Uploaded image is too large"}), 413
+
+# Admin protection:
+# Set BIRDNET_DISPLAY_ADMIN_SECRET to a long random value before enabling any
+# admin controls, for example:
+#   export BIRDNET_DISPLAY_ADMIN_SECRET="replace-with-a-long-random-value"
+# Do not commit, print, or log the real secret.
+ADMIN_SECRET = ""
+ADMIN_REQUIRE_LOCAL_NETWORK = False
+ADMIN_SECRET_FILE = Path(
+    os.environ.get(
+        "BIRDNET_DISPLAY_ADMIN_SECRET_FILE",
+        PATHS.display_home / ".admin_secret",
+    )
+)
+TRUSTED_ADMIN_NETWORKS = (
+    "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,"
+    "192.168.0.0/16,169.254.0.0/16,fe80::/10"
+)
+
+app.config["ADMIN_SECRET"] = ADMIN_SECRET
+app.secret_key = (
+    os.environ.get("BIRDNET_DISPLAY_FLASK_SECRET_KEY")
+    or os.environ.get("BIRDNET_DISPLAY_ADMIN_SECRET")
+    or secrets.token_bytes(32)
+)
+
+CSRF_SESSION_KEY = "admin_csrf_token"
+STATE_CHANGING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _read_admin_secret_file() -> str:
+    try:
+        if ADMIN_SECRET_FILE.exists():
+            return ADMIN_SECRET_FILE.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        print(f"[ADMIN] Could not read admin secret file: {exc}")
+    return ""
+
+
+def get_admin_secret() -> str:
+    return (
+        os.environ.get("BIRDNET_DISPLAY_ADMIN_SECRET")
+        or app.config.get("ADMIN_SECRET")
+        or _read_admin_secret_file()
+        or ""
+    ).strip()
+
+
+def admin_secret_configured() -> bool:
+    return bool(get_admin_secret())
+
+
+def validate_new_admin_secret(secret: str) -> tuple[bool, str]:
+    if not isinstance(secret, str):
+        return False, "System password is required"
+    secret = secret.strip()
+    if len(secret) < 8:
+        return False, "System password must be at least 8 characters"
+    if "\n" in secret or "\r" in secret:
+        return False, "System password cannot contain line breaks"
+    return True, ""
+
+
+def save_admin_secret(secret: str) -> tuple[bool, str]:
+    is_valid, message = validate_new_admin_secret(secret)
+    if not is_valid:
+        return False, message
+    try:
+        ADMIN_SECRET_FILE.write_text(secret.strip() + "\n", encoding="utf-8")
+        ADMIN_SECRET_FILE.chmod(0o600)
+    except OSError as exc:
+        print(f"[ADMIN] Could not save admin secret file: {exc}")
+        return False, "Could not save system password"
+    return True, ""
+
+
+def get_csrf_token() -> str:
+    token = session.get(CSRF_SESSION_KEY)
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session[CSRF_SESSION_KEY] = token
+    return token
+
+
+def _json_error(message: str, status_code: int):
+    return jsonify({"ok": False, "error": message}), status_code
+
+
+def _json_validation_error(message: str):
+    return _json_error(message, 400)
+
+
+def _json_server_error(message: str = "Request failed. Check the server logs for details."):
+    return _json_error(message, 500)
+
+
+def get_json_payload_or_error():
+    if not request.is_json:
+        return None, _json_validation_error("Expected a JSON request body.")
+    data = request.get_json(silent=True)
+    if data is None:
+        return None, _json_validation_error("Malformed JSON request body.")
+    if not isinstance(data, dict):
+        return None, _json_validation_error("Expected a JSON object request body.")
+    return data, None
+
+
+def _trusted_admin_networks():
+    raw = os.environ.get("TRUSTED_ADMIN_NETWORKS", TRUSTED_ADMIN_NETWORKS)
+    networks = []
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            print(f"[ADMIN] Ignoring invalid trusted network: {item}")
+    return networks
+
+
+def _remote_addr_is_trusted() -> bool:
+    try:
+        remote_ip = ipaddress.ip_address(request.remote_addr or "")
+    except ValueError:
+        return False
+    return any(remote_ip in network for network in _trusted_admin_networks())
+
+
+def trusted_network_required(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        error = _trusted_network_error()
+        if error:
+            return error
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def _trusted_network_error():
+    require_local = _env_bool("ADMIN_REQUIRE_LOCAL_NETWORK", ADMIN_REQUIRE_LOCAL_NETWORK)
+    if require_local and not _remote_addr_is_trusted():
+        return _json_error("System Controls are not allowed from this network", 403)
+    return None
+
+
+def _admin_access_error():
+    trusted_error = _trusted_network_error()
+    if trusted_error:
+        return trusted_error
+    if not admin_secret_configured():
+        return _json_error("System Controls are locked until a system password is created", 503)
+    if not session.get("admin_authenticated"):
+        return _json_error("Unlock System Controls first", 401)
+    return None
+
+
+def admin_required(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        error = _admin_access_error()
+        if error:
+            return error
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def _csrf_error():
+    if request.method not in STATE_CHANGING_METHODS:
+        return None
+    expected = session.get(CSRF_SESSION_KEY)
+    provided = request.headers.get("X-CSRF-Token") or request.form.get("_csrf_token")
+    if not provided and request.is_json:
+        data = request.get_json(silent=True)
+        if isinstance(data, dict):
+            provided = data.get("csrf_token")
+    if not expected or not provided or not hmac.compare_digest(str(expected), str(provided)):
+        return _json_error("Missing or invalid CSRF token", 403)
+    return None
+
+
+def csrf_required(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        error = _csrf_error()
+        if error:
+            return error
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+@app.get("/admin/csrf")
+def admin_csrf():
+    return jsonify({"ok": True, "csrf_token": get_csrf_token()})
+
+
+@app.get("/admin/status")
+def admin_status():
+    return jsonify(
+        {
+            "ok": True,
+            "configured": admin_secret_configured(),
+            "authenticated": bool(session.get("admin_authenticated")),
+            "local_network_required": _env_bool("ADMIN_REQUIRE_LOCAL_NETWORK", ADMIN_REQUIRE_LOCAL_NETWORK),
+        }
+    )
+
+
+@app.post("/admin/setup")
+@trusted_network_required
+@csrf_required
+def admin_setup():
+    if admin_secret_configured():
+        return _json_error("System password is already configured", 409)
+
+    data, payload_error = get_json_payload_or_error()
+    if payload_error:
+        return payload_error
+    provided = str(data.get("secret", "")).strip()
+    saved, message = save_admin_secret(provided)
+    if not saved:
+        return _json_error(message, 400)
+
+    session["admin_authenticated"] = True
+    return jsonify({"ok": True, "configured": True, "authenticated": True})
+
+
+@app.post("/admin/login")
+@trusted_network_required
+@csrf_required
+def admin_login():
+    secret = get_admin_secret()
+    if not secret:
+        return _json_error("System Controls are locked until a system password is created", 503)
+
+    data, payload_error = get_json_payload_or_error()
+    if payload_error:
+        return payload_error
+    provided = str(data.get("secret", ""))
+    if not hmac.compare_digest(secret, provided):
+        return _json_error("Incorrect password", 401)
+
+    session["admin_authenticated"] = True
+    return jsonify({"ok": True})
+
+
+@app.post("/admin/logout")
+@admin_required
+@csrf_required
+def admin_logout():
+    session.pop("admin_authenticated", None)
+    return jsonify({"ok": True})
 
 @app.get("/api/bird_images")
 def api_bird_images_list():
@@ -48,8 +345,7 @@ def api_bird_images_list():
             continue
 
         st = os.stat(p)
-        # This URL assumes static files are served under /static/...
-        url = f"/static/bird_images_cache/{os.path.basename(folder_path)}/{name}"
+        url = _bird_image_url(os.path.basename(folder_path), name)
         items.append({
             "name": name,
             "url": url,
@@ -61,43 +357,40 @@ def api_bird_images_list():
 
 
 @app.delete("/api/bird_images")
+@admin_required
+@csrf_required
 def api_bird_images_delete():
     """
     JSON body:
       { species_folder: "...", filename: "..." }
     """
-    data = request.get_json(silent=True) or {}
+    data, payload_error = get_json_payload_or_error()
+    if payload_error:
+        return payload_error
     species_folder = data.get("species_folder", "")
     filename = data.get("filename", "")
 
     folder_path = _safe_species_folder(species_folder)
 
-    # File name should not include slashes
-    safe_file = os.path.basename(filename)
-    if not safe_file or safe_file != filename:
-        abort(400, description="Invalid filename")
-
-    ext = os.path.splitext(safe_file)[1].lower()
-    if ext not in ALLOWED_EXTS:
-        abort(400, description="Not an allowed image type")
-
-    target = os.path.abspath(os.path.join(folder_path, safe_file))
-    if not target.startswith(os.path.abspath(folder_path) + os.sep):
+    safe_file = _safe_image_filename(filename)
+    folder_base = Path(folder_path).resolve()
+    target = (folder_base / safe_file).resolve()
+    if target.parent != folder_base:
         abort(400, description="Invalid path")
 
-    if not os.path.isfile(target):
+    if not target.is_file():
         return jsonify({"ok": False, "error": "File not found"}), 404
 
-    os.remove(target)
+    target.unlink()
     return jsonify({"ok": True})
 
 
-EXTRACTED_DIR = "/home/birdpi/BirdSongs/Extracted/By_Date"
+EXTRACTED_DIR = PATHS.audio_dir
 
 
 def get_latest_clip_for_species(com_name: str):
     """Return the most recent DB detection row (with File_Name) whose audio file still exists on disk."""
-    db_path = "/home/birdpi/BirdNET-Pi/scripts/birds.db"
+    db_path = _get_db_path()
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.execute(
@@ -120,7 +413,7 @@ def get_latest_clip_for_species(com_name: str):
 def get_best_clip_for_species(com_name: str):
     """Return the highest-confidence detection row whose audio file still exists on disk.
     Ties broken by most recent date/time."""
-    db_path = "/home/birdpi/BirdNET-Pi/scripts/birds.db"
+    db_path = _get_db_path()
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.execute(
@@ -143,7 +436,7 @@ def get_best_clip_for_species(com_name: str):
 def find_clip_paths(com_name: str, date: str, file_name: str):
     """Return (audio_path, spectrogram_path) for a detection, either may be None."""
     species_folder = com_name.replace("'", "").replace(" ", "_")
-    base = Path(EXTRACTED_DIR) / date / species_folder
+    base = EXTRACTED_DIR / date / species_folder
     audio = base / file_name
     spectrogram = base / (file_name + ".png")
     return (
@@ -161,7 +454,7 @@ from cache_builder import CACHE_DIRECTORY, SPECIES_FILE, load_species_from_file
 # Configuration
 # ----------------------------------------------------------------------
 
-PLACEHOLDER_DIRECTORY = "/home/birdpi/birdnet_display/static/bird_images_cache/placeholders"
+PLACEHOLDER_DIRECTORY = PATHS.placeholder_dir
 
 BASE_URL = "http://localhost:5000/"
 API_ENDPOINT = "api/v2/detections/recent"
@@ -171,49 +464,190 @@ HEADERS = {
 }
 PROXIES = {"http": None, "https": None}
 SERVER_PORT = 5000
+BIRDNET_DB_PATH = PATHS.db_path
 
 
 DETECTION_CACHE = {"id": None, "raw_data": []}
 
-# Adjust this to your real base folder:
-BIRD_IMAGE_BASE = "/home/birdpi/birdnet_display/static/bird_images_cache"
+BIRD_IMAGE_BASE = PATHS.image_cache_dir
 
-SPECTROGRAM_DIR = "/home/birdpi/birdnet_display/static/spectrogram_cache"
+SPECTROGRAM_DIR = PATHS.spectrogram_cache_dir
 
 # Only allow these image types for browsing/deleting
 ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+ALLOWED_IMAGE_FORMATS = {
+    "JPEG": {".jpg", ".jpeg"},
+    "PNG": {".png"},
+    "GIF": {".gif"},
+    "WEBP": {".webp"},
+}
+IMAGE_FORMAT_EXTENSIONS = {
+    "JPEG": ".jpg",
+    "PNG": ".png",
+    "GIF": ".gif",
+    "WEBP": ".webp",
+}
+
+def _bird_image_base_path() -> Path:
+    return BIRD_IMAGE_BASE.resolve()
+
+
+def _safe_species_folder_name(species_folder: str) -> str:
+    raw = (species_folder or "").strip()
+    safe = secure_filename(raw)
+    if not raw or not safe or safe != raw or "/" in raw or "\\" in raw:
+        abort(400, description="Invalid species folder")
+    if not re.match(r"^[A-Za-z0-9_.-]+$", safe):
+        abort(400, description="Invalid species folder")
+    return safe
+
 
 def _safe_species_folder(species_folder: str) -> str:
     """
-    Convert a user-provided folder name into a safe on-disk path
-    under BIRD_IMAGE_BASE, and ensure it can't escape via ../
+    Resolve a user-provided species folder under BIRD_IMAGE_BASE.
+    Reject traversal and path-like input instead of silently rewriting it.
     """
-    # Keep it simple: treat folder name as a single path component
-    safe = secure_filename(species_folder or "")
-    if not safe:
-        abort(400, description="Invalid species folder")
-
-    full = os.path.abspath(os.path.join(BIRD_IMAGE_BASE, safe))
-    base = os.path.abspath(BIRD_IMAGE_BASE)
-
-    # Prevent path traversal
-    if not full.startswith(base + os.sep):
+    safe = _safe_species_folder_name(species_folder)
+    base = _bird_image_base_path()
+    full = (base / safe).resolve()
+    if base not in full.parents:
         abort(400, description="Invalid path")
+    return str(full)
 
-    return full
+
+def _image_cache_static_prefix() -> str | None:
+    try:
+        rel = PATHS.image_cache_dir.relative_to(PATHS.static_dir)
+    except ValueError:
+        return None
+    return "/static/" + rel.as_posix().strip("/")
+
+
+def _bird_image_url(species_folder: str, filename: str) -> str:
+    prefix = _image_cache_static_prefix()
+    if prefix:
+        return f"{prefix}/{species_folder}/{filename}"
+    return f"/bird-image-cache/{species_folder}/{filename}"
+
+
+def safe_join_under_base(base_dir: Path, filename: str) -> Path:
+    base = Path(base_dir).resolve()
+    target = (base / filename).resolve()
+    if target.parent != base:
+        raise ValueError("Unsafe upload path")
+    return target
+
+
+def _safe_image_filename(filename: str) -> str:
+    raw = (filename or "").strip()
+    safe = secure_filename(raw)
+    if not raw or not safe or safe != raw or "/" in raw or "\\" in raw:
+        abort(400, description="Invalid filename")
+    ext = Path(safe).suffix.lower()
+    if ext not in ALLOWED_EXTS:
+        abort(400, description="Not an allowed image type")
+    return safe
+
+
+def _uploaded_file_size(file_storage) -> int:
+    try:
+        current_pos = file_storage.stream.tell()
+        file_storage.stream.seek(0, os.SEEK_END)
+        size = file_storage.stream.tell()
+        file_storage.stream.seek(current_pos)
+        return size
+    except Exception:
+        return int(file_storage.content_length or 0)
+
+
+def validate_uploaded_image(file_storage) -> dict:
+    raw_name = (file_storage.filename or "").strip()
+    if not raw_name:
+        raise ValueError("Missing file")
+    if "/" in raw_name or "\\" in raw_name:
+        raise ValueError("Unsafe filename")
+
+    original_name = secure_filename(raw_name)
+    if not original_name:
+        raise ValueError("Unsafe filename")
+
+    original_ext = Path(original_name).suffix.lower()
+    if original_ext not in ALLOWED_EXTS:
+        raise ValueError("Unsupported file type")
+
+    file_size = _uploaded_file_size(file_storage)
+    if file_size <= 0:
+        raise ValueError("Missing file")
+    if file_size > BIRDNET_UPLOAD_MAX_BYTES:
+        raise ValueError("Uploaded image is too large")
+
+    try:
+        file_storage.stream.seek(0)
+        with Image.open(file_storage.stream) as img:
+            image_format = (img.format or "").upper()
+            width, height = img.size
+            img.verify()
+
+        if image_format not in ALLOWED_IMAGE_FORMATS:
+            raise ValueError("Unsupported file type")
+        if original_ext not in ALLOWED_IMAGE_FORMATS[image_format]:
+            raise ValueError("File extension does not match image content")
+        if width <= 0 or height <= 0:
+            raise ValueError("Invalid image content")
+        if width > BIRDNET_UPLOAD_MAX_DIMENSION or height > BIRDNET_UPLOAD_MAX_DIMENSION:
+            raise ValueError("Image dimensions are too large")
+        if width * height > BIRDNET_UPLOAD_MAX_PIXELS:
+            raise ValueError("Image dimensions are too large")
+
+        file_storage.stream.seek(0)
+        return {
+            "format": image_format,
+            "extension": IMAGE_FORMAT_EXTENSIONS[image_format],
+            "width": width,
+            "height": height,
+            "original_name": original_name,
+            "size": file_size,
+        }
+    except ValueError:
+        raise
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError("Invalid image content") from exc
+    finally:
+        try:
+            file_storage.stream.seek(0)
+        except Exception:
+            pass
+
+
+def generate_safe_image_filename(image_format: str, target_dir: Path) -> str:
+    extension = IMAGE_FORMAT_EXTENSIONS[image_format]
+    for _ in range(20):
+        filename = f"{uuid.uuid4().hex}{extension}"
+        if not safe_join_under_base(target_dir, filename).exists():
+            return filename
+    raise ValueError("Could not generate a safe image filename")
+
+
+@app.route("/bird-image-cache/<species_folder>/<filename>")
+def serve_bird_image_cache(species_folder, filename):
+    folder_path = _safe_species_folder(species_folder)
+    safe_file = _safe_image_filename(filename)
+    return send_from_directory(folder_path, safe_file)
 
 # ----------------------------------------------------------------------
 # IP + QR code helpers
 # ----------------------------------------------------------------------
 def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s = None
     try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("10.255.255.255", 1))
         return s.getsockname()[0]
     except Exception:
         return "127.0.0.1"
     finally:
-        s.close()
+        if s is not None:
+            s.close()
 
 
 @app.route("/qr_code.png")
@@ -289,14 +723,15 @@ SPECIES_ALIASES = {
     # "Fish Crow": "American Crow",
 }
 
-# Base path for your existing cache – adjust if your project uses a different path
-BIRD_IMAGE_CACHE_BASE = "/home/birdpi/birdnet_display/static/bird_images_cache"
+BIRD_IMAGE_CACHE_BASE = PATHS.image_cache_dir
+BIRD_IMAGE_CACHE_BASE.mkdir(parents=True, exist_ok=True)
+SPECTROGRAM_DIR.mkdir(parents=True, exist_ok=True)
 
 # Snapshot of all existing species folders
 EXISTING_BIRD_IMAGE_FOLDERS = {
     name
     for name in os.listdir(BIRD_IMAGE_CACHE_BASE)
-    if os.path.isdir(os.path.join(BIRD_IMAGE_CACHE_BASE, name))
+    if os.path.isdir(BIRD_IMAGE_CACHE_BASE / name)
 }
 
 
@@ -411,7 +846,7 @@ def get_cached_image(species_name: str):
             copyright_text = fh.read().strip()
 
     return {
-        "image_url": f"/static/bird_images_cache/{species_folder}/{chosen_image}",
+        "image_url": _bird_image_url(species_folder, chosen_image),
         "copyright": copyright_text,
     }
 
@@ -442,7 +877,7 @@ def get_offline_fallback_data():
 
             for i in range(max_cards):
                 filename = image_files[i % len(image_files)]
-                image_url = f"/static/bird_images_cache/placeholders/{filename}"
+                image_url = _bird_image_url("placeholders", filename)
 
                 fallback_data.append(
                     {
@@ -489,14 +924,33 @@ def get_offline_fallback_data():
 # Local BirdNET-Pi DB helpers
 # ----------------------------------------------------------------------
 def _get_db_path():
-    user_dir = os.path.expanduser("~")
-    return os.path.join(user_dir, "BirdNET-Pi", "scripts", "birds.db")
+    return BIRDNET_DB_PATH
+
+
+def log_path_configuration():
+    print("[PATHS] BirdNET Display resolved paths:")
+    print(f"[PATHS]   BIRDNET_DISPLAY_HOME={PATHS.display_home}")
+    print(f"[PATHS]   BIRDNET_DISPLAY_STATIC_DIR={PATHS.static_dir}")
+    print(f"[PATHS]   BIRDNET_IMAGE_CACHE_DIR={PATHS.image_cache_dir}")
+    print(f"[PATHS]   BIRDNET_PI_HOME={PATHS.birdnet_pi_home}")
+    print(f"[PATHS]   BIRDNET_DB_PATH={PATHS.db_path}")
+    print(f"[PATHS]   BIRDNET_AUDIO_DIR={PATHS.audio_dir}")
+
+    warnings = [
+        ("BIRDNET_DISPLAY_STATIC_DIR", PATHS.static_dir, "Display static files"),
+        ("BIRDNET_IMAGE_CACHE_DIR", PATHS.image_cache_dir, "Bird image cache"),
+        ("BIRDNET_DB_PATH", PATHS.db_path, "BirdNET detections database"),
+        ("BIRDNET_AUDIO_DIR", PATHS.audio_dir, "BirdNET extracted audio directory"),
+    ]
+    for env_name, path, label in warnings:
+        if not path.exists():
+            print(f"[WARN] {label} not found at {path}. Set {env_name} to override.")
 
 
 def get_bird_data_from_local_db():
     """Load bird data from BirdNET-Pi detections SQLite DB."""
     detections = []
-    db_path = "/home/birdpi/BirdNET-Pi/scripts/birds.db"
+    db_path = _get_db_path()
 
     if not os.path.exists(db_path):
         print(f"[WARN] Local DB not found at {db_path}")
@@ -550,6 +1004,7 @@ def get_detections_last_24h(limit_rows=2000):
     try:
         db_path = _get_db_path()
         if not os.path.exists(db_path):
+            print(f"[WARN] Local DB not found at {db_path}")
             return None
 
         conn = sqlite3.connect(db_path)
@@ -587,7 +1042,7 @@ def get_detections_last_24h(limit_rows=2000):
 
             # Figure out the correct folder name + whether it exists
             folder_name, folder_exists = get_bird_folder_name(common_name)
-            folder_path = os.path.join(BIRD_IMAGE_CACHE_BASE, folder_name)
+            folder_path = str(BIRD_IMAGE_CACHE_BASE / folder_name)
 
             # Does this folder actually contain any image files?
             has_images = False
@@ -626,7 +1081,7 @@ def get_unique_species_last_24h():
     sorted by most recent detection time.
     Includes folder + image metadata so the UI photo browser works.
     """
-    db_path = "/home/birdpi/BirdNET-Pi/scripts/birds.db"
+    db_path = _get_db_path()
 
     try:
         conn = sqlite3.connect(db_path)
@@ -660,7 +1115,7 @@ def get_unique_species_last_24h():
 
             # Folder info
             folder_name, folder_exists = get_bird_folder_name(name)
-            folder_path = os.path.join(BIRD_IMAGE_CACHE_BASE, folder_name)
+            folder_path = str(BIRD_IMAGE_CACHE_BASE / folder_name)
 
             # Check whether folder contains any images
             has_images = False
@@ -707,7 +1162,7 @@ def get_all_species_ever():
     Formats time_display as a human-readable date rather than seconds-ago.
     """
     from datetime import datetime as _dt
-    db_path = "/home/birdpi/BirdNET-Pi/scripts/birds.db"
+    db_path = _get_db_path()
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
@@ -736,7 +1191,7 @@ def get_all_species_ever():
             copyright_info = cached["copyright"] if cached else ""
 
             folder_name, folder_exists = get_bird_folder_name(name)
-            folder_path = os.path.join(BIRD_IMAGE_CACHE_BASE, folder_name)
+            folder_path = str(BIRD_IMAGE_CACHE_BASE / folder_name)
 
             has_images = False
             if folder_exists:
@@ -1019,7 +1474,7 @@ def api_species_stats():
     if not species:
         return jsonify({"ok": False, "error": "Missing 'species' parameter"}), 400
 
-    db_path = "/home/birdpi/BirdNET-Pi/scripts/birds.db"
+    db_path = _get_db_path()
     if not os.path.exists(db_path):
         return jsonify({"ok": False, "error": "Database not found"}), 500
 
@@ -1145,22 +1600,18 @@ def api_species_stats():
 
     except Exception as e:
         print(f"[ERROR] /api/species_stats: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return _json_server_error()
 
 
 @app.route("/")
 def index():
     bird_data, api_is_down = get_bird_data()
 
-    if not os.path.exists("static"):
-        os.makedirs("static")
     template_path = "index.html"
-    full_template_path = os.path.join("static", template_path)
-    if not os.path.exists(full_template_path):
-        with open(full_template_path, "w", encoding="utf-8") as f:
-            f.write(
-                "<h1>Template file not found. Please create a static/index.html template.</h1>"
-            )
+    full_template_path = PATHS.static_dir / template_path
+    if not full_template_path.exists():
+        print(f"[ERROR] Display template not found: {full_template_path}")
+        abort(500, description="Display template is missing")
 
     refresh_interval = 30 if api_is_down else 5
     server_url = f"http://{get_local_ip()}:{SERVER_PORT}"
@@ -1171,6 +1622,7 @@ def index():
         refresh_interval=refresh_interval,
         api_is_down=api_is_down,
         server_url=server_url,
+        csrf_token=get_csrf_token(),
     )
 
 import os
@@ -1183,7 +1635,8 @@ def get_temp():
             celsius = int(raw) / 1000.0
         return jsonify({"temperature_c": round(celsius, 1)})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"[ERROR] /temp: {e}")
+        return _json_server_error("Could not read temperature")
 
 
 @app.route("/data")
@@ -1357,12 +1810,12 @@ def api_bird_day_index_v1():
     Response shape (error):
         { "ok": false, "error": "..." }  (HTTP 200 — UI handles gracefully)
     """
-    db_path = "/home/birdpi/BirdNET-Pi/scripts/birds.db"
+    db_path = _get_db_path()
 
     if not os.path.exists(db_path):
         return jsonify({
             "ok": False,
-            "error": f"Detections database not found at {db_path}",
+            "error": "Detections database not found",
             "rows": [],
             "today": datetime.now().strftime("%Y-%m-%d"),
         })
@@ -1406,7 +1859,7 @@ def api_bird_day_index_v1():
         print(f"[ERROR] /api/bird_day_index_v1 failed: {e}")
         return jsonify({
             "ok": False,
-            "error": str(e),
+            "error": "Could not load Bird Day Index data",
             "rows": [],
             "today": datetime.now().strftime("%Y-%m-%d"),
         })
@@ -1547,12 +2000,12 @@ def api_bird_day_index_v2():
     baseline if the recent window has no data. Identical columns so
     the UI renders both datasets with the same code.
     """
-    db_path = "/home/birdpi/BirdNET-Pi/scripts/birds.db"
+    db_path = _get_db_path()
 
     if not os.path.exists(db_path):
         return jsonify({
             "ok": False,
-            "error": f"Detections database not found at {db_path}",
+            "error": "Detections database not found",
             "rows": [],
             "today": datetime.now().strftime("%Y-%m-%d"),
         })
@@ -1596,7 +2049,7 @@ def api_bird_day_index_v2():
         print(f"[ERROR] /api/bird_day_index_v2 failed: {e}")
         return jsonify({
             "ok": False,
-            "error": str(e),
+            "error": "Could not load Bird Day Index data",
             "rows": [],
             "today": datetime.now().strftime("%Y-%m-%d"),
         })
@@ -1632,7 +2085,7 @@ from flask import abort
 @app.route("/api/first_detections_today")
 def api_first_detections_today():
     """Return all unique species detected today, ordered by most recently detected."""
-    db_path = "/home/birdpi/BirdNET-Pi/scripts/birds.db"
+    db_path = _get_db_path()
     if not os.path.exists(db_path):
         return jsonify({"ok": False, "error": "Database not found", "species": []}), 500
     try:
@@ -1649,7 +2102,8 @@ def api_first_detections_today():
         species = [{"name": r["Com_Name"], "last_seen": r["last_seen"]} for r in rows]
         return jsonify({"ok": True, "today": datetime.now().strftime("%Y-%m-%d"), "species": species})
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e), "species": []}), 500
+        print(f"[ERROR] /api/first_detections_today: {e}")
+        return jsonify({"ok": False, "error": "Could not load first detections", "species": []}), 500
 
 
 # Tracks species -> Unix timestamp when their 6h chirp cooldown expires.
@@ -1669,7 +2123,7 @@ def api_best_clip_today():
     3. Pick randomly from the remaining eligible pool.
     4. After a species is selected, start its 6-hour cooldown.
     """
-    db_path = "/home/birdpi/BirdNET-Pi/scripts/birds.db"
+    db_path = _get_db_path()
     if not os.path.exists(db_path):
         return jsonify({"ok": False, "error": "Database not found"}), 500
 
@@ -1697,7 +2151,7 @@ def api_best_clip_today():
         conn.close()
     except Exception as e:
         print(f"[ERROR] /api/best_clip_today: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return _json_server_error("Could not load today's best clip")
 
     if not top_species:
         return jsonify({"ok": False, "error": "No detections today"}), 404
@@ -1745,7 +2199,7 @@ def api_best_clip_today():
         conn2.close()
     except Exception as e:
         print(f"[ERROR] /api/best_clip_today search: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return _json_server_error("Could not load today's best clip")
 
     return jsonify({"ok": False, "error": "No audio files on disk for today's detections"}), 404
 
@@ -1764,6 +2218,8 @@ def serve_clip(relpath):
 
 
 @app.route("/create_image_folder", methods=["POST"])
+@admin_required
+@csrf_required
 def create_image_folder():
     """
     Create an image folder for a given bird species under BIRD_IMAGE_CACHE_BASE.
@@ -1786,7 +2242,9 @@ def create_image_folder():
         }
     """
     try:
-        data = request.get_json(silent=True) or {}
+        data, payload_error = get_json_payload_or_error()
+        if payload_error:
+            return payload_error
 
         folder_name = data.get("folder_name")
         common_name = data.get("name") or data.get("common_name")
@@ -1803,20 +2261,12 @@ def create_image_folder():
         if not folder_name and common_name:
             folder_name, _ = get_bird_folder_name(common_name)
 
-        # Basic safety: only allow simple folder names
-        if not re.match(r"^[A-Za-z0-9_\-]+$", folder_name):
-            return jsonify(
-                {
-                    "ok": False,
-                    "error": "Invalid folder name",
-                }
-            ), 400
-
-        folder_path = os.path.join(BIRD_IMAGE_CACHE_BASE, folder_name)
-        already_exists = os.path.isdir(folder_path)
+        folder_name = _safe_species_folder_name(folder_name)
+        folder_path = Path(_safe_species_folder(folder_name))
+        already_exists = folder_path.is_dir()
 
         if not already_exists:
-            os.makedirs(folder_path, exist_ok=True)
+            folder_path.mkdir(parents=True, exist_ok=True)
             # Keep our in-memory folder set in sync
             EXISTING_BIRD_IMAGE_FOLDERS.add(folder_name)
 
@@ -1824,18 +2274,22 @@ def create_image_folder():
             {
                 "ok": True,
                 "folder_name": folder_name,
-                "folder_path": folder_path,
+                "folder_path": str(folder_path),
                 "already_exists": already_exists,
                 "error": None,
             }
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error creating image folder: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return _json_server_error("Could not create image folder")
         
         
 @app.route("/upload_bird_images", methods=["POST"])
+@admin_required
+@csrf_required
 def upload_bird_images():
     """
     Upload one or more image files for a given bird species.
@@ -1870,17 +2324,9 @@ def upload_bird_images():
         if not folder_name and common_name:
             folder_name, _ = get_bird_folder_name(common_name)
 
-        # Basic safety: only allow simple folder names
-        if not re.match(r"^[A-Za-z0-9_\-]+$", folder_name):
-            return jsonify(
-                {
-                    "ok": False,
-                    "error": "Invalid folder name",
-                }
-            ), 400
-
-        folder_path = os.path.join(BIRD_IMAGE_CACHE_BASE, folder_name)
-        os.makedirs(folder_path, exist_ok=True)
+        folder_name = _safe_species_folder_name(folder_name)
+        folder_path = Path(_safe_species_folder(folder_name))
+        folder_path.mkdir(parents=True, exist_ok=True)
         EXISTING_BIRD_IMAGE_FOLDERS.add(folder_name)
 
         # Get files list
@@ -1899,34 +2345,41 @@ def upload_bird_images():
                 }
             ), 400
 
-        allowed_exts = (".jpg", ".jpeg", ".png", ".webp", ".gif")
         saved_files = []
+        upload_errors = []
 
         for f in files:
             if not f or f.filename == "":
+                upload_errors.append("Missing file")
                 continue
 
-            filename = secure_filename(f.filename)
-            if not filename:
+            try:
+                image_info = validate_uploaded_image(f)
+                filename = generate_safe_image_filename(image_info["format"], folder_path)
+                dest_path = safe_join_under_base(folder_path, filename)
+                with open(dest_path, "xb") as out:
+                    f.save(out)
+                saved_files.append(filename)
+            except ValueError as e:
+                safe_original = secure_filename(f.filename or "") or "unnamed"
+                message = str(e) or "Invalid image upload"
+                print(f"Rejected uploaded image '{safe_original}': {message}")
+                upload_errors.append(message)
                 continue
-
-            ext = os.path.splitext(filename)[1].lower()
-            if ext not in allowed_exts:
-                print(f"Skipping unsupported file type: {filename}")
+            except FileExistsError:
+                safe_original = secure_filename(f.filename or "") or "unnamed"
+                print(f"Generated upload filename collision for '{safe_original}'")
+                upload_errors.append("Could not generate a safe image filename")
                 continue
-
-            dest_path = os.path.join(folder_path, filename)
-            f.save(dest_path)
-            saved_files.append(filename)
 
         if not saved_files:
+            error_message = upload_errors[0] if upload_errors else "No valid image files were uploaded"
             return jsonify(
                 {
                     "ok": False,
                     "folder_name": folder_name,
-                    "folder_path": folder_path,
                     "saved_files": [],
-                    "error": "No valid image files were uploaded",
+                    "error": error_message,
                 }
             ), 400
 
@@ -1934,19 +2387,23 @@ def upload_bird_images():
             {
                 "ok": True,
                 "folder_name": folder_name,
-                "folder_path": folder_path,
+                "folder_path": str(folder_path),
                 "saved_files": saved_files,
                 "error": None,
             }
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error uploading bird images: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return _json_server_error("Could not upload images")
 
 
 
 @app.route("/shutdown", methods=["POST"])
+@admin_required
+@csrf_required
 def shutdown():
     shutdown_func = request.environ.get("werkzeug.server.shutdown")
     if shutdown_func:
@@ -1963,7 +2420,7 @@ def shutdown():
 
 from pathlib import Path  # (safe even if already imported above)
 
-FAN_STATE_FILE = Path("/home/birdpi/birdnet_display/fan_state.json")
+FAN_STATE_FILE = PATHS.fan_state_file
 FAN_COOLING_PATH = Path("/sys/class/thermal/cooling_device0/cur_state")
 OFF_AUTO_TEMP_C = 75.0  # temperature at which Off fails over to Auto
 
@@ -2033,6 +2490,48 @@ def apply_fan_state_to_hardware(mode: str, speed: int):
         print(f"[FAN] Error applying hardware state: {e}")
 
 
+VALID_FAN_MODES = {"Off", "Auto", "On"}
+BRIGHTNESS_MIN = 0
+BRIGHTNESS_MAX = 255
+
+
+def validate_fan_mode(value):
+    if not isinstance(value, str) or not value:
+        return None, "Missing or invalid fan mode. Expected Off, Auto, or On."
+    if value not in VALID_FAN_MODES:
+        return None, "Invalid fan mode. Expected Off, Auto, or On."
+    return value, None
+
+
+def _parse_int_like(value, field_name):
+    if isinstance(value, bool) or value is None:
+        return None, f"Invalid {field_name}. Expected an integer value."
+    if isinstance(value, int):
+        return value, None
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw and re.fullmatch(r"[+-]?\d+", raw):
+            return int(raw), None
+        return None, f"Invalid {field_name}. Expected an integer value."
+    return None, f"Invalid {field_name}. Expected an integer value."
+
+
+def validate_fan_speed(value):
+    parsed, error = _parse_int_like(value, "fan speed")
+    if error:
+        return None, error
+    return max(0, min(100, parsed)), None
+
+
+def validate_brightness(value):
+    parsed, error = _parse_int_like(value, "brightness")
+    if error:
+        return None, error
+    if parsed < BRIGHTNESS_MIN or parsed > BRIGHTNESS_MAX:
+        return None, f"Invalid brightness. Expected {BRIGHTNESS_MIN} to {BRIGHTNESS_MAX}."
+    return parsed, None
+
+
 @app.route("/fan", methods=["GET", "POST"])
 def fan_control():
     """
@@ -2070,7 +2569,7 @@ def fan_control():
         speed_val = state.get("speed", 100)
         is_off_like = (mode_val == "Off") or (mode_val == "On" and speed_val <= 0)
 
-        # If UI says Off but hardware is spinning → kernel override → Auto
+        # If UI says Off but hardware is spinning -> kernel override -> Auto
         if is_off_like and hw_state not in (None, 0):
             state["mode"] = "Auto"
             save_fan_state(state)
@@ -2099,10 +2598,31 @@ def fan_control():
     # ==========================================================
     # POST (Update fan state)
     # ==========================================================
-    data = request.get_json(force=True, silent=True) or {}
-    mode = data.get("mode", state.get("mode", "Auto"))
-    speed = int(data.get("speed", state.get("speed", 100)))
-    speed = max(0, min(100, speed))
+    admin_error = _admin_access_error()
+    if admin_error:
+        return admin_error
+    csrf_error = _csrf_error()
+    if csrf_error:
+        return csrf_error
+
+    data, payload_error = get_json_payload_or_error()
+    if payload_error:
+        return payload_error
+
+    if "mode" not in data:
+        return _json_validation_error("Missing fan mode. Expected Off, Auto, or On.")
+    mode, mode_error = validate_fan_mode(data.get("mode"))
+    if mode_error:
+        return _json_validation_error(mode_error)
+
+    if "speed" in data:
+        speed, speed_error = validate_fan_speed(data.get("speed"))
+        if speed_error:
+            return _json_validation_error(speed_error)
+    else:
+        speed, speed_error = validate_fan_speed(state.get("speed", 100))
+        if speed_error:
+            speed = 100
 
     new_state = {"mode": mode, "speed": speed}
     save_fan_state(new_state)
@@ -2112,26 +2632,33 @@ def fan_control():
 
 
 @app.route("/brightness", methods=["POST"])
+@admin_required
+@csrf_required
 def set_brightness():
+    data, payload_error = get_json_payload_or_error()
+    if payload_error:
+        return payload_error
+
+    if "brightness" not in data:
+        return _json_validation_error("Missing brightness. Expected 0 to 255.")
+    val, brightness_error = validate_brightness(data.get("brightness"))
+    if brightness_error:
+        return _json_validation_error(brightness_error)
+
     try:
-        data = request.get_json(force=True, silent=True) or {}
-        brightness = data.get("brightness")
-        if brightness is not None:
-            val = int(brightness)
-            if 0 <= val <= 255:
-                cmd = (
-                    f"echo {val} | sudo tee /sys/class/backlight/10-0045/brightness"
-                )
-                print(f"Executing brightness command: {cmd}")
-                os.system(cmd)
-                return jsonify({"status": "success", "brightness": val})
-        return jsonify({"status": "error", "message": "Invalid brightness value"}), 400
+        cmd = f"echo {val} | sudo tee /sys/class/backlight/10-0045/brightness"
+        print(f"Executing brightness command: {cmd}")
+        os.system(cmd)
     except Exception as e:
         print(f"Error setting brightness: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "message": "Failed to set brightness"}), 500
+
+    return jsonify({"status": "success", "brightness": val})
 
 
 @app.route("/reboot", methods=["POST"])
+@admin_required
+@csrf_required
 def reboot_system():
     print("Executing reboot command...")
     os.system("sudo reboot")
@@ -2139,6 +2666,8 @@ def reboot_system():
 
 
 @app.route("/poweroff", methods=["POST"])
+@admin_required
+@csrf_required
 def poweroff_system():
     print("Executing power off command...")
     os.system("sudo poweroff")
@@ -2150,8 +2679,16 @@ def poweroff_system():
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
     if "--build-cache" in sys.argv:
-        print("To build the cache, please run 'python cache_builder.py' directly.")
+        from cache_builder import ensure_cache_is_built, resize_cached_images
+
+        os.chdir(PATHS.display_home)
+        log_path_configuration()
+        print("--- Starting Offline Image Cache Builder ---")
+        ensure_cache_is_built()
+        resize_cached_images()
+        print("--- Cache building process complete. ---")
         sys.exit(0)
 
+    log_path_configuration()
     print(f"Starting Flask server on http://0.0.0.0:{SERVER_PORT}")
     app.run(host="0.0.0.0", port=SERVER_PORT)

@@ -79,7 +79,7 @@ Internals:
 - Plays locally stored detection clips when available.
 - Includes kiosk-mode startup support for a dedicated display.
 - Provides brightness, fan, reboot, and poweroff controls from the UI.
-- Includes AP setup support for field/local deployments.
+- Includes optional, advanced AP setup support for field/local deployments.
 - Includes 3D-print files for the display enclosure and microphone housing.
 
 ## Setup and Installation
@@ -134,13 +134,74 @@ If kiosk mode is enabled, Chromium launches the display automatically on boot.
 
 ## Configuration
 
-The main paths and service settings are near the top of `birdnet_display.py`, including:
+Filesystem paths are resolved in `path_config.py`. Environment variables take precedence, and defaults are chosen so a normal Raspberry Pi install under the current Linux user works without extra setup.
 
-- `BASE_URL`: BirdNET web/API base URL.
-- `SERVER_PORT`: Flask display server port.
-- `BIRD_IMAGE_CACHE_BASE`: local bird photo cache.
-- `EXTRACTED_DIR`: extracted BirdNET audio/spectrogram location.
-- `PLACEHOLDER_DIRECTORY`: fallback image directory.
+| Variable | Default |
+| --- | --- |
+| `BIRDNET_DISPLAY_HOME` | directory containing `birdnet_display.py` |
+| `BIRDNET_DISPLAY_STATIC_DIR` | `$BIRDNET_DISPLAY_HOME/static` |
+| `BIRDNET_IMAGE_CACHE_DIR` | `$BIRDNET_DISPLAY_STATIC_DIR/bird_images_cache` |
+| `BIRDNET_IMAGE_DIR` | fallback alias for `BIRDNET_IMAGE_CACHE_DIR` |
+| `BIRDNET_PI_HOME` | `$HOME/BirdNET-Pi` |
+| `BIRDNET_DB_PATH` | `$BIRDNET_PI_HOME/scripts/birds.db` |
+| `BIRDNET_AUDIO_DIR` | `$HOME/BirdSongs/Extracted/By_Date` |
+
+Current Raspberry Pi default example for user `birdpi`:
+
+```bash
+cd /home/birdpi/birdnet_display
+./run.sh
+```
+
+The resolved defaults are:
+
+```text
+BIRDNET_DISPLAY_HOME=/home/birdpi/birdnet_display
+BIRDNET_DB_PATH=/home/birdpi/BirdNET-Pi/scripts/birds.db
+BIRDNET_AUDIO_DIR=/home/birdpi/BirdSongs/Extracted/By_Date
+BIRDNET_IMAGE_CACHE_DIR=/home/birdpi/birdnet_display/static/bird_images_cache
+```
+
+Different username or custom install path example:
+
+```bash
+export BIRDNET_DISPLAY_HOME="/opt/birdnet-display"
+export BIRDNET_PI_HOME="/home/alex/BirdNET-Pi"
+export BIRDNET_AUDIO_DIR="/home/alex/BirdSongs/Extracted/By_Date"
+cd "$BIRDNET_DISPLAY_HOME"
+./run.sh
+```
+
+Override only the database or image cache:
+
+```bash
+export BIRDNET_DB_PATH="/mnt/birdnet/scripts/birds.db"
+export BIRDNET_IMAGE_CACHE_DIR="/mnt/birdnet-display-cache"
+./run.sh
+```
+
+### Admin controls
+
+Admin/destructive controls are disabled until an admin secret is configured. Set a long random value before using reboot, poweroff, brightness, fan changes, image upload, image delete, or image folder creation:
+
+```bash
+export BIRDNET_DISPLAY_ADMIN_SECRET="replace-with-a-long-random-value"
+```
+
+If you want Flask sessions signed with a separate key, also set:
+
+```bash
+export BIRDNET_DISPLAY_FLASK_SECRET_KEY="replace-with-another-long-random-value"
+```
+
+To restrict admin actions to loopback and trusted LAN ranges in addition to login and CSRF protection:
+
+```bash
+export ADMIN_REQUIRE_LOCAL_NETWORK=true
+export TRUSTED_ADMIN_NETWORKS="127.0.0.0/8,::1/128,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12"
+```
+
+The browser dashboard prompts for the admin secret on the first protected action. The secret is sent only to `/admin/login` and is not stored in localStorage.
 
 Edit `species_list.csv` to control which species are used for offline/cache building, then rebuild:
 
@@ -148,6 +209,54 @@ Edit `species_list.csv` to control which species are used for offline/cache buil
 cd ~/birdnet_display
 source venv/bin/activate
 python cache_builder.py
+```
+
+## Optional BirdNET-Go Networking
+
+The main installer does not modify BirdNET-Go, stop BirdNET-Go, rewrite its service file, or remove any BirdNET-Go systemd drop-ins.
+
+If you need BirdNET-Go to run with Docker host networking, use the advanced script after install. Review the dry run first:
+
+```bash
+sudo ~/birdnet_display/scripts/configure_birdnet_go_networking.sh --dry-run
+```
+
+Apply the change only after reviewing the generated drop-in:
+
+```bash
+sudo ~/birdnet_display/scripts/configure_birdnet_go_networking.sh --apply
+```
+
+If your BirdNET-Go service has a different name:
+
+```bash
+sudo ~/birdnet_display/scripts/configure_birdnet_go_networking.sh --service birdnet-go --dry-run
+```
+
+The script creates or updates only this BirdNET Display-owned drop-in:
+
+```text
+/etc/systemd/system/birdnet-go.service.d/birdnet-display-networking.conf
+```
+
+Backups of files the script touches are stored under:
+
+```text
+/var/backups/birdnet-display/birdnet-go-networking/YYYYMMDD-HHMMSS/
+```
+
+Inspect the effective service:
+
+```bash
+systemctl cat birdnet-go
+```
+
+Manual revert:
+
+```bash
+sudo rm /etc/systemd/system/birdnet-go.service.d/birdnet-display-networking.conf
+sudo systemctl daemon-reload
+sudo systemctl restart birdnet-go
 ```
 
 ## Project Structure
@@ -158,11 +267,14 @@ python cache_builder.py
 ├── images/                  # README screenshots and build photos
 ├── static/
 │   └── index.html           # Main touchscreen/browser UI
-├── ap_setup.sh              # Wi-Fi access point setup helper
+├── ap_setup.sh              # Optional Wi-Fi access point setup helper
+├── ap_setup.example.conf    # Placeholder AP setup config example
 ├── birdnet_display.py       # Main Flask backend
 ├── cache_builder.py         # Local bird image cache builder
 ├── install.sh               # Raspberry Pi installer
 ├── kiosk_launcher.sh        # Chromium kiosk launcher
+├── scripts/
+│   └── configure_birdnet_go_networking.sh
 ├── requirements.txt         # Python dependencies
 ├── run.sh                   # App runner
 └── species_list.csv         # Species list for cache building
@@ -170,20 +282,43 @@ python cache_builder.py
 
 ## Access Point Setup
 
-`ap_setup.sh` can configure the Raspberry Pi as a Wi-Fi access point for deployments without a normal network.
+`ap_setup.sh` can configure the Raspberry Pi as a Wi-Fi access point for deployments without a normal network. This is optional and advanced: it changes NetworkManager configuration on the Pi.
 
-Before running it, review and edit the variables at the top of the script:
+The script has no active default SSID, password, interface, MAC address, or fixed client IP. It refuses to change networking unless you explicitly use `--apply`.
 
-- `WIFI_INTERFACE`
-- `HOTSPOT_SSID`
-- `HOTSPOT_PASSWORD`
-- `DEVICE_MAC`
-- `DEVICE_FIXED_IP`
-
-Run with:
+Preview the change first:
 
 ```bash
-sudo ./ap_setup.sh
+./ap_setup.sh --dry-run \
+  --ssid "YourDisplayAP" \
+  --password "change-this-password" \
+  --interface wlan1
+```
+
+Apply after reviewing the summary:
+
+```bash
+sudo ./ap_setup.sh --apply \
+  --ssid "YourDisplayAP" \
+  --password "change-this-password" \
+  --interface wlan1
+```
+
+You can also copy the example config and fill in your own values:
+
+```bash
+cp ap_setup.example.conf ap_setup.conf
+./ap_setup.sh --dry-run --config ap_setup.conf
+sudo ./ap_setup.sh --apply --config ap_setup.conf
+```
+
+The script creates or updates only the configured NetworkManager connection name, defaulting to `BirdNET-Display-AP`. It does not delete unrelated connections, edit `NetworkManager.conf`, write dnsmasq shared config, or restart NetworkManager.
+
+Inspect or remove the created AP connection:
+
+```bash
+nmcli connection show "BirdNET-Display-AP"
+sudo nmcli connection delete "BirdNET-Display-AP"
 ```
 
 ## 3D Printed Files
@@ -203,8 +338,63 @@ Main build hardware used:
 - If the UI does not load, confirm `static/index.html` exists beside `birdnet_display.py`.
 - If bird photos do not appear, rebuild the cache with `python cache_builder.py`.
 - If the app does not start on boot, check the service status and journal logs.
-- If audio clips do not play, confirm the extracted BirdNET audio files exist under the configured `EXTRACTED_DIR`.
+- If audio clips do not play, confirm the extracted BirdNET audio files exist under `BIRDNET_AUDIO_DIR`.
 - If fan or brightness controls fail, confirm the Raspberry Pi hardware paths and sudo permissions match this setup.
+
+## Admin Security Checks
+
+Manual checks on the Raspberry Pi:
+
+- Without `BIRDNET_DISPLAY_ADMIN_SECRET`, `curl -X POST http://127.0.0.1:5000/reboot` should return an admin-disabled error and must not reboot.
+- With the secret configured, unauthenticated `POST /reboot` should return `401`.
+- In the dashboard, a protected action should prompt for the admin secret.
+- An authenticated `POST /reboot` should work only when the request includes the session cookie and `X-CSRF-Token`.
+- Missing or invalid `X-CSRF-Token` should return `403`.
+- Public display pages such as `/`, `/data`, `/temp`, and `GET /api/bird_images` should still load without login.
+- Uploading a non-image file or a renamed text file should be rejected.
+- Creating an image folder named `../test` should be rejected.
+- Image upload and delete should stay limited to `static/bird_images_cache`.
+
+## Image Upload Checks
+
+Manual checks on the Raspberry Pi:
+
+- Upload a valid JPEG from the bird detail panel and confirm it appears in the photo browser.
+- Upload a valid PNG and confirm it appears in the photo browser.
+- Rename a text file to `fake.jpg` and confirm upload is rejected.
+- Upload a file with an unsupported extension and confirm upload is rejected.
+- Upload a file larger than `BIRDNET_UPLOAD_MAX_BYTES` and confirm a clean size error.
+- Upload an image wider or taller than `4096px`, or over `8,847,360` total pixels, and confirm upload is rejected.
+- Upload the same original filename twice and confirm both generated files remain.
+- Upload a filename like `../test.jpg` and confirm it cannot escape the image directory.
+- Confirm existing bird image display behavior still works after upload.
+
+## Path Configuration Checks
+
+Manual checks on the Raspberry Pi:
+
+- Run from `/home/birdpi/birdnet_display` with no environment variables and confirm startup logs show the expected `/home/birdpi` defaults.
+- Copy or clone the display project under another user or path and confirm startup logs show that clone as `BIRDNET_DISPLAY_HOME`.
+- Set `BIRDNET_DB_PATH` to a test SQLite database and confirm database warnings/API reads reference that exact file.
+- Set `BIRDNET_IMAGE_CACHE_DIR` to a temporary directory, run `python cache_builder.py`, and confirm images are written there.
+- Set `BIRDNET_AUDIO_DIR` to a temporary extracted-audio root and confirm clip lookup checks that location.
+- Run `rg -n "/home/birdpi|birdpi" .` and confirm any matches are documentation examples, not executable app assumptions.
+- Start the app normally and confirm it can find database records, audio files, and bird image cache files.
+
+## BirdNET-Go Networking Checks
+
+Manual checks on the Raspberry Pi:
+
+- Run `./install.sh` and confirm it does not prompt to configure BirdNET-Go networking.
+- Confirm `install.sh` does not stop, restart, delete, or rewrite BirdNET-Go systemd files.
+- Run `sudo ~/birdnet_display/scripts/configure_birdnet_go_networking.sh --dry-run` and confirm it prints the target drop-in without changing files or restarting services.
+- Run `sudo ~/birdnet_display/scripts/configure_birdnet_go_networking.sh --apply` and confirm it creates only `/etc/systemd/system/birdnet-go.service.d/birdnet-display-networking.conf`.
+- Confirm unrelated files in `/etc/systemd/system/birdnet-go.service.d/` remain in place.
+- Confirm a timestamped backup directory is created before replacing an existing BirdNET Display-owned drop-in.
+- Confirm the script exits safely if `birdnet-go.service` is not installed.
+- Confirm the script exits safely without sufficient permissions when using `--apply`.
+- Remove the created drop-in, run `sudo systemctl daemon-reload`, and restart BirdNET-Go to restore prior behavior.
+- Run `systemctl cat birdnet-go` and confirm the main service is unchanged plus the BirdNET Display-owned drop-in only.
 
 ## Repository
 

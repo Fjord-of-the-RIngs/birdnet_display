@@ -34,3 +34,6 @@ static/bird_images_cache/
 venv/
 fan_state.json
 static/*.bak.*
+.admin_secret
+ap_setup.conf
+ap_setup_backups/

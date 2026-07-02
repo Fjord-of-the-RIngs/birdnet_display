@@ -1,9 +1,11 @@
 #!/bin/bash
 # This script activates the virtual environment and starts the Flask server.
 echo "Starting the Bird Detection Display..."
-# Change into the directory where the application is installed.  This script
-# assumes the project has been unpacked into /home/birdpi/birdnet_display.  If you
-# install it elsewhere, update the path below accordingly.
-cd "/home/birdpi/birdnet_display"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export BIRDNET_DISPLAY_HOME="${BIRDNET_DISPLAY_HOME:-$SCRIPT_DIR}"
+export BIRDNET_PI_HOME="${BIRDNET_PI_HOME:-$HOME/BirdNET-Pi}"
+export BIRDNET_DB_PATH="${BIRDNET_DB_PATH:-$BIRDNET_PI_HOME/scripts/birds.db}"
+export BIRDNET_AUDIO_DIR="${BIRDNET_AUDIO_DIR:-$HOME/BirdSongs/Extracted/By_Date}"
+cd "$BIRDNET_DISPLAY_HOME"
 source venv/bin/activate
 python3 birdnet_display.py

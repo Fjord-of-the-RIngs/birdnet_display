@@ -1140,6 +1140,83 @@ body.dark-mode .family-sidebar-pill.fsp-active {
             font-weight: 500;
         }
 
+        #system-controls-entry-btn {
+            padding: 8px 16px;
+            border: 1px solid #2563eb;
+            border-radius: 7px;
+            background: #2563eb;
+            color: white;
+            font-size: 0.9rem;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        #system-controls-entry-btn:hover {
+            background: #1d4ed8;
+            border-color: #1d4ed8;
+        }
+
+        .system-controls-intro {
+            margin: -8px 0 18px 0;
+            color: #475569;
+            font-size: 0.92em;
+            line-height: 1.35;
+            text-align: left;
+        }
+
+        .admin-panel {
+            border-top: 1px solid #e2e8f0;
+            padding-top: 16px;
+            text-align: left;
+        }
+
+        .admin-panel input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 1em;
+            margin-top: 8px;
+        }
+
+        .admin-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .admin-actions button {
+            padding: 9px 14px;
+            border: none;
+            border-radius: 8px;
+            background: #2563eb;
+            color: white;
+            font-size: 0.94em;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .admin-actions button.secondary {
+            background: #64748b;
+        }
+
+        .admin-message {
+            min-height: 18px;
+            margin: 8px 0 0 0;
+            color: #dc2626;
+            font-size: 0.86em;
+        }
+
+        .admin-message.success {
+            color: #15803d;
+        }
+
+        .admin-hidden {
+            display: none !important;
+        }
+
         .system-buttons {
             display: flex;
             justify-content: space-between;
@@ -1899,24 +1976,33 @@ body.dark-mode .family-sidebar-pill.fsp-active {
     body.dark-mode .species-stats-loading { color: #6b7280; }
     /* Settings modal */
     body.dark-mode #settingsModal .modal-content,
+    body.dark-mode #systemControlsModal .modal-content,
     body.dark-mode #confirmModal .modal-content {
         background: #1e2433;
         color: #e5e7eb;
     }
     body.dark-mode #settingsModal h2,
+    body.dark-mode #systemControlsModal h2,
     body.dark-mode #settingsModal label,
+    body.dark-mode #systemControlsModal label,
     body.dark-mode .settings-group label { color: #e5e7eb; }
     body.dark-mode input[type="number"],
     body.dark-mode input[type="time"],
+    body.dark-mode input[type="password"],
     body.dark-mode select {
         background: #252d3d;
         color: #e5e7eb;
         border: 1px solid rgba(255,255,255,0.15);
         border-radius: 4px;
     }
+    body.dark-mode input[type="password"]::placeholder { color: #94a3b8; }
     body.dark-mode .schedule-slot { border-color: rgba(255,255,255,0.10); }
     body.dark-mode .schedule-empty-hint { color: #6b7280; }
-    body.dark-mode #cpu-temp-display { color: #e5e7eb; }
+    body.dark-mode #systemControlsModal .system-controls-intro { color: #cbd5e1; }
+    body.dark-mode #systemControlsModal .admin-panel { border-top-color: rgba(255,255,255,0.14); }
+    body.dark-mode #systemControlsModal #cpu-temp-display,
+    body.dark-mode #systemControlsModal #fan-status-text-main,
+    body.dark-mode #systemControlsModal #fan-speed-label { color: #e5e7eb; }
     /* QR modal */
     body.dark-mode #qrModal .modal-content { background: #1e2433; color: #e5e7eb; }
     body.dark-mode #qrModal .modal-content p,
@@ -2464,6 +2550,72 @@ body.dark-mode .family-sidebar-pill.fsp-active {
                 <button id="schedule-add-btn" class="schedule-add-btn" type="button">+ Add time slot</button>
             </div>
 
+            <div class="settings-group">
+                <div class="dark-mode-toggle-row">
+                    <label for="autoplay-notify-toggle" style="margin:0;">Auto-play Notifications</label>
+                    <label class="dm-toggle">
+                        <input type="checkbox" id="autoplay-notify-toggle">
+                        <span class="dm-slider"></span>
+                    </label>
+                </div>
+                <div style="font-size:0.78em;color:#6b7280;margin-top:4px;">Plays a recording once per species on first detection each day</div>
+                <div id="autoplay-status" style="margin-top:8px;font-size:0.78em;min-height:1.4em;"></div>
+                <div style="margin-top:10px;display:flex;align-items:center;gap:10px;">
+                    <button id="autoplay-test-btn" type="button" style="padding:6px 14px;border-radius:7px;border:1px solid #10b981;background:#ecfdf5;color:#065f46;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap;">Test Notification</button>
+                    <span id="autoplay-test-status" style="font-size:0.78em;color:#6b7280;"></span>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <div class="dark-mode-toggle-row">
+                    <label for="hourly-chirp-toggle" style="margin:0;">Hourly Chirp</label>
+                    <label class="dm-toggle">
+                        <input type="checkbox" id="hourly-chirp-toggle">
+                        <span class="dm-slider"></span>
+                    </label>
+                </div>
+                <div style="font-size:0.78em;color:#6b7280;margin-top:4px;">Plays the highest-confidence recording of the day once per hour, on the hour</div>
+                <div id="hourly-chirp-status" style="margin-top:8px;font-size:0.78em;min-height:1.4em;"></div>
+                <div style="margin-top:10px;display:flex;align-items:center;gap:10px;">
+                    <button id="hourly-chirp-test-btn" type="button" style="padding:6px 14px;border-radius:7px;border:1px solid #10b981;background:#ecfdf5;color:#065f46;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap;">Test Chirp</button>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <label>Analytics</label>
+                <button id="bdi-open-btn" class="bdi-open-btn" type="button">Bird Day Index</button>
+            </div>
+
+            <div class="settings-group">
+                <label>System</label>
+                <button id="system-controls-entry-btn" type="button">System Controls</button>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="systemControlsModal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>System Controls</h2>
+            <p class="system-controls-intro">Use a system password to protect restart, power, fan, and photo management controls.</p>
+
+            <div id="admin-panel" class="settings-group admin-panel">
+                <div id="admin-setup-panel" class="admin-hidden">
+                    <label for="admin-setup-secret">Create System Password</label>
+                    <input type="password" id="admin-setup-secret" autocomplete="new-password" placeholder="New password">
+                    <input type="password" id="admin-setup-confirm" autocomplete="new-password" placeholder="Confirm password">
+                    <div class="admin-actions">
+                        <button id="admin-setup-btn" type="button">Save Password</button>
+                    </div>
+                </div>
+                <div id="admin-login-panel" class="admin-hidden">
+                    <label for="admin-login-secret">System Password</label>
+                    <input type="password" id="admin-login-secret" autocomplete="current-password" placeholder="Password">
+                    <div class="admin-actions">
+                        <button id="admin-login-btn" type="button">Unlock</button>
+                    </div>
+                </div>
+                <div id="admin-unlocked-panel" class="admin-hidden">
                     <div class="settings-group">
     <label>CPU Temperature</label>
     <span id="cpu-temp-display" style="font-size: 1.1em; margin-left: 10px;">-- °C</span>
@@ -2501,51 +2653,15 @@ body.dark-mode .family-sidebar-pill.fsp-active {
     </div>
 </div>
 
-
-
-
-
-
-
-            <div class="settings-group">
-                <div class="dark-mode-toggle-row">
-                    <label for="autoplay-notify-toggle" style="margin:0;">Auto-play Notifications</label>
-                    <label class="dm-toggle">
-                        <input type="checkbox" id="autoplay-notify-toggle">
-                        <span class="dm-slider"></span>
-                    </label>
+                    <div class="system-buttons">
+                        <button id="restart-btn" class="system-btn restart-btn">Restart</button>
+                        <button id="power-btn" class="system-btn power-btn">Power Off</button>
+                    </div>
+                    <div class="admin-actions">
+                        <button id="admin-lock-btn" class="secondary" type="button">Lock System Controls</button>
+                    </div>
                 </div>
-                <div style="font-size:0.78em;color:#6b7280;margin-top:4px;">Plays a recording once per species on first detection each day</div>
-                <div id="autoplay-status" style="margin-top:8px;font-size:0.78em;min-height:1.4em;"></div>
-                <div style="margin-top:10px;display:flex;align-items:center;gap:10px;">
-                    <button id="autoplay-test-btn" type="button" style="padding:6px 14px;border-radius:7px;border:1px solid #10b981;background:#ecfdf5;color:#065f46;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap;">Test Notification</button>
-                    <span id="autoplay-test-status" style="font-size:0.78em;color:#6b7280;"></span>
-                </div>
-            </div>
-
-            <div class="settings-group">
-                <div class="dark-mode-toggle-row">
-                    <label for="hourly-chirp-toggle" style="margin:0;">Hourly Chirp</label>
-                    <label class="dm-toggle">
-                        <input type="checkbox" id="hourly-chirp-toggle">
-                        <span class="dm-slider"></span>
-                    </label>
-                </div>
-                <div style="font-size:0.78em;color:#6b7280;margin-top:4px;">Plays the highest-confidence recording of the day once per hour, on the hour</div>
-                <div id="hourly-chirp-status" style="margin-top:8px;font-size:0.78em;min-height:1.4em;"></div>
-                <div style="margin-top:10px;display:flex;align-items:center;gap:10px;">
-                    <button id="hourly-chirp-test-btn" type="button" style="padding:6px 14px;border-radius:7px;border:1px solid #10b981;background:#ecfdf5;color:#065f46;font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap;">Test Chirp</button>
-                </div>
-            </div>
-
-            <div class="settings-group">
-                <label>Analytics</label>
-                <button id="bdi-open-btn" class="bdi-open-btn" type="button">Bird Day Index</button>
-            </div>
-
-            <div class="system-buttons">
-                <button id="restart-btn" class="system-btn restart-btn">Restart</button>
-                <button id="power-btn" class="system-btn power-btn">Power Off</button>
+                <p id="admin-status-message" class="admin-message"></p>
             </div>
         </div>
     </div>
@@ -2671,6 +2787,109 @@ body.dark-mode .family-sidebar-pill.fsp-active {
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {
+            let adminCsrfToken = {{ csrf_token | tojson }};
+            let adminSessionAuthenticated = false;
+            let adminStatusCache = { configured: false, authenticated: false };
+
+            const systemControlsEntryBtn = document.getElementById('system-controls-entry-btn');
+            const adminSetupPanel = document.getElementById('admin-setup-panel');
+            const adminLoginPanel = document.getElementById('admin-login-panel');
+            const adminUnlockedPanel = document.getElementById('admin-unlocked-panel');
+            const adminSetupSecret = document.getElementById('admin-setup-secret');
+            const adminSetupConfirm = document.getElementById('admin-setup-confirm');
+            const adminLoginSecret = document.getElementById('admin-login-secret');
+            const adminStatusMessage = document.getElementById('admin-status-message');
+
+            function setAdminStatusMessage(message, success = false) {
+                if (!adminStatusMessage) return;
+                adminStatusMessage.textContent = message || '';
+                adminStatusMessage.classList.toggle('success', success);
+            }
+
+            function renderAdminState(state) {
+                adminStatusCache = {
+                    configured: !!state.configured,
+                    authenticated: !!state.authenticated
+                };
+                if (adminSetupPanel) adminSetupPanel.classList.toggle('admin-hidden', adminStatusCache.configured);
+                if (adminLoginPanel) adminLoginPanel.classList.toggle('admin-hidden', !adminStatusCache.configured || adminStatusCache.authenticated);
+                if (adminUnlockedPanel) adminUnlockedPanel.classList.toggle('admin-hidden', !adminStatusCache.authenticated);
+                adminSessionAuthenticated = adminStatusCache.authenticated;
+                if (!adminStatusCache.configured) {
+                    setAdminStatusMessage('Create a system password to enable protected controls.');
+                } else if (adminStatusCache.authenticated) {
+                    setAdminStatusMessage('System Controls unlocked.', true);
+                } else {
+                    setAdminStatusMessage('');
+                }
+            }
+
+            async function refreshAdminStatus() {
+                const statusRes = await fetch('/admin/status', { cache: 'no-store' });
+                const status = await statusRes.json().catch(() => ({}));
+                if (!statusRes.ok || !status.ok) throw new Error(status.error || 'Could not check admin status');
+                renderAdminState(status);
+                return status;
+            }
+
+            async function getAdminCsrfToken() {
+                if (adminCsrfToken) return adminCsrfToken;
+                const res = await fetch('/admin/csrf', { cache: 'no-store' });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || !data.csrf_token) throw new Error(data.error || 'Could not get CSRF token');
+                adminCsrfToken = data.csrf_token;
+                return adminCsrfToken;
+            }
+
+            async function postAdminSecret(url, secret) {
+                const csrfToken = await getAdminCsrfToken();
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({ secret })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data.ok) throw new Error(data.error || 'System Controls request failed');
+                await refreshAdminStatus();
+                return data;
+            }
+
+            async function ensureAdminAuthenticated() {
+                if (adminSessionAuthenticated) return;
+
+                const status = await refreshAdminStatus();
+                if (!status.configured) {
+                    showSystemControlsModal();
+                    throw new Error('Create a system password to enable protected controls.');
+                }
+                if (status.authenticated) {
+                    adminSessionAuthenticated = true;
+                    return;
+                }
+
+                showSystemControlsModal();
+                throw new Error('Unlock System Controls.');
+            }
+
+            async function adminFetch(url, options = {}) {
+                await ensureAdminAuthenticated();
+                const csrfToken = await getAdminCsrfToken();
+                const headers = new Headers(options.headers || {});
+                headers.set('X-CSRF-Token', csrfToken);
+
+                let response = await fetch(url, { ...options, headers });
+                if (response.status === 401) {
+                    adminSessionAuthenticated = false;
+                    await ensureAdminAuthenticated();
+                    headers.set('X-CSRF-Token', await getAdminCsrfToken());
+                    response = await fetch(url, { ...options, headers });
+                }
+                return response;
+            }
+
             // --- LAYOUT LOGIC ---
             const savedLayout = localStorage.getItem('birdLayout') || '3';
 
@@ -2711,6 +2930,7 @@ body.dark-mode .family-sidebar-pill.fsp-active {
             // --- MODALS AND SETTINGS ---
             const qrModal = document.getElementById('qrModal');
             const settingsModal = document.getElementById('settingsModal');
+            const systemControlsModal = document.getElementById('systemControlsModal');
             const confirmModal = document.getElementById('confirmModal');
             let confirmAction = null;
             const qrImage = document.getElementById('qrImage');
@@ -2784,6 +3004,15 @@ qrModal.addEventListener('click', (e) => {
                 if (window._refreshHourlyChirpPreview) window._refreshHourlyChirpPreview();
             }
 
+            function hideSystemControlsModal() {
+                systemControlsModal.style.display = 'none';
+            }
+
+            function showSystemControlsModal() {
+                systemControlsModal.style.display = 'flex';
+                refreshAdminStatus().catch(error => setAdminStatusMessage(error.message));
+            }
+
 // --- Settings (gear) icon: support both click and touch on tablets/phones ---
 // Wire up the gear button in the all-birds overlay to the same settings modal
 const allBirdsSettingsBtn = document.getElementById('all-birds-settings-btn');
@@ -2800,6 +3029,15 @@ if (allTimeSettingsBtn) {
     allTimeSettingsBtn.addEventListener('touchend', openFromOverlay);
 }
 
+
+if (systemControlsEntryBtn) {
+    systemControlsEntryBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        hideSettingsModal();
+        showSystemControlsModal();
+    });
+}
 
 const settingsIconBtn = document.getElementById('settings-icon-btn');
 if (settingsIconBtn) {
@@ -2818,11 +3056,86 @@ if (settingsIconBtn) {
     settingsIconBtn.addEventListener('touchend', openSettings);
 }
 
+if (document.getElementById('admin-setup-btn')) {
+    document.getElementById('admin-setup-btn').addEventListener('click', async () => {
+        try {
+            if (adminSetupSecret.value !== adminSetupConfirm.value) {
+                throw new Error('Passwords do not match.');
+            }
+            await postAdminSecret('/admin/setup', adminSetupSecret.value);
+            adminSetupSecret.value = '';
+            adminSetupConfirm.value = '';
+            setAdminStatusMessage('System Controls unlocked.', true);
+        } catch (error) {
+            setAdminStatusMessage(error.message);
+        }
+    });
+}
+
+if (document.getElementById('admin-login-btn')) {
+    document.getElementById('admin-login-btn').addEventListener('click', async () => {
+        try {
+            await postAdminSecret('/admin/login', adminLoginSecret.value);
+            adminLoginSecret.value = '';
+            setAdminStatusMessage('System Controls unlocked.', true);
+        } catch (error) {
+            setAdminStatusMessage(error.message);
+        }
+    });
+}
+
+if (document.getElementById('admin-lock-btn')) {
+    document.getElementById('admin-lock-btn').addEventListener('click', async () => {
+        try {
+            const csrfToken = await getAdminCsrfToken();
+            const response = await fetch('/admin/logout', {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': csrfToken }
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.ok) throw new Error(data.error || 'Could not lock System Controls');
+            adminSessionAuthenticated = false;
+            await refreshAdminStatus();
+            setAdminStatusMessage('System Controls locked.', true);
+        } catch (error) {
+            setAdminStatusMessage(error.message);
+        }
+    });
+}
+
+if (adminSetupSecret) {
+    adminSetupSecret.addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('admin-setup-btn').click();
+    });
+}
+
+if (adminSetupConfirm) {
+    adminSetupConfirm.addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('admin-setup-btn').click();
+    });
+}
+
+if (adminLoginSecret) {
+    adminLoginSecret.addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('admin-login-btn').click();
+    });
+}
+
+refreshAdminStatus().catch(error => setAdminStatusMessage(error.message));
+
 // Clicking the dim background of the Settings modal closes it
 if (settingsModal) {
     settingsModal.addEventListener('click', (e) => {
         if (e.target === settingsModal) {
             hideSettingsModal();
+        }
+    });
+}
+
+if (systemControlsModal) {
+    systemControlsModal.addEventListener('click', (e) => {
+        if (e.target === systemControlsModal) {
+            hideSystemControlsModal();
         }
     });
 }
@@ -2885,7 +3198,7 @@ if (settingsModal) {
                 }
 
                 if (photoStatusEl) photoStatusEl.textContent = "";
-                if (photoGridEl) photoGridEl.innerHTML = "";
+                if (photoGridEl) photoGridEl.replaceChildren();
 
                 if (resultEl) {
                     resultEl.textContent = "";
@@ -2915,7 +3228,7 @@ if (settingsModal) {
                 }
 
                 if (folderPathEl) {
-                    const effectiveFolderPath = bird?.folder_path || (bird?.folder_name ? ("/home/birdpi/birdnet_display/static/bird_images_cache/" + bird.folder_name) : "N/A");
+                    const effectiveFolderPath = bird?.folder_path || (bird?.folder_name ? ("configured image cache/" + bird.folder_name) : "N/A");
                     folderPathEl.textContent = effectiveFolderPath;
                 }
 
@@ -2927,7 +3240,7 @@ if (settingsModal) {
                         try {
                             createBtn.disabled = true;
                             createBtn.textContent = "Creating...";
-                            const response = await fetch("/create_image_folder", {
+                            const response = await adminFetch("/create_image_folder", {
                                 method: "POST",
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify(bird || {})
@@ -2978,7 +3291,7 @@ if (settingsModal) {
                             for (const file of uploadInput.files) formData.append("files", file);
                             formData.append("species_folder", bird?.folder_name || "");
 
-                            const response = await fetch("/upload_bird_images", {
+                            const response = await adminFetch("/upload_bird_images", {
                                 method: "POST",
                                 body: formData
                             });
@@ -3157,7 +3470,7 @@ async function sendFanState(mode, speedOverride = null) {
     updateFanStatusLabel();
 
     try {
-        await fetch('/fan', {
+        await adminFetch('/fan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -3249,7 +3562,7 @@ async function sendFanStateToServer(mode) {
     updateFanStatus();
 
     try {
-        await fetch('/fan', {
+        await adminFetch('/fan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mode: fanMode, speed: fanSpeed })
@@ -3289,16 +3602,36 @@ async function loadFanStateFromServer() {
 
 
             document.getElementById('restart-btn').addEventListener('click', () => {
-                showConfirmModal('Are you sure you want to restart the system?', () => {
-                    fetch('/reboot', { method: 'POST' });
-                    document.body.innerHTML = '<h1>System is restarting...</h1>';
+                showConfirmModal('Are you sure you want to restart the system?', async () => {
+                    try {
+                        const res = await adminFetch('/reboot', { method: 'POST' });
+                        if (!res.ok) {
+                            const data = await res.json().catch(() => ({}));
+                            throw new Error(data.error || `HTTP ${res.status}`);
+                        }
+                        const message = document.createElement('h1');
+                        message.textContent = 'System is restarting...';
+                        document.body.replaceChildren(message);
+                    } catch (err) {
+                        alert('Restart failed: ' + err.message);
+                    }
                 });
             });
 
             document.getElementById('power-btn').addEventListener('click', () => {
-                showConfirmModal('Are you sure you want to power off the system?', () => {
-                    fetch('/poweroff', { method: 'POST' });
-                    document.body.innerHTML = '<h1>System is shutting down...</h1>';
+                showConfirmModal('Are you sure you want to power off the system?', async () => {
+                    try {
+                        const res = await adminFetch('/poweroff', { method: 'POST' });
+                        if (!res.ok) {
+                            const data = await res.json().catch(() => ({}));
+                            throw new Error(data.error || `HTTP ${res.status}`);
+                        }
+                        const message = document.createElement('h1');
+                        message.textContent = 'System is shutting down...';
+                        document.body.replaceChildren(message);
+                    } catch (err) {
+                        alert('Power off failed: ' + err.message);
+                    }
                 });
             });
 
@@ -3327,12 +3660,140 @@ async function loadFanStateFromServer() {
 
             // --- DISPLAY MODE + SHUFFLE LOGIC ---
             const PLACEHOLDER_IMAGES = [
-                '/static/bird_images_cache/placeholders/placeholder1.jpg',
-                '/static/bird_images_cache/placeholders/placeholder2.jpg',
-                '/static/bird_images_cache/placeholders/placeholder3.jpg'
+                '/bird-image-cache/placeholders/placeholder1.jpg',
+                '/bird-image-cache/placeholders/placeholder2.jpg',
+                '/bird-image-cache/placeholders/placeholder3.jpg'
             ];
             const NO_BIRD_TITLE = "Waiting for birds to visit your BirdNET";
             const NO_BIRD_TIME  = "No recent detections yet.";
+
+            const SAFE_IMAGE_URL_PREFIXES = [
+                '/bird-image-cache/',
+                '/static/bird_images_cache/',
+                '/static/thumbnail_cache/'
+            ];
+            const SAFE_MEDIA_URL_PREFIXES = ['/clip/'];
+
+            function safeText(value, fallback = '') {
+                if (value === null || value === undefined) return fallback;
+                if (typeof value === 'number') return Number.isFinite(value) ? String(value) : fallback;
+                if (typeof value === 'boolean') return String(value);
+                if (typeof value !== 'string') return fallback;
+                return value || fallback;
+            }
+
+            // Live DB/API values are always inserted as text, never parsed as HTML.
+            function setText(el, value, fallback = '') {
+                if (el) el.textContent = safeText(value, fallback);
+            }
+
+            function createTextElement(tag, className, value, fallback = '') {
+                const el = document.createElement(tag);
+                if (className) el.className = className;
+                setText(el, value, fallback);
+                return el;
+            }
+
+            function clearAndAppend(parent, ...children) {
+                if (!parent) return;
+                parent.replaceChildren(...children.filter(Boolean));
+            }
+
+            function appendTextOrNode(parent, value) {
+                if (!parent || value === null || value === undefined) return;
+                parent.appendChild(value instanceof Node ? value : document.createTextNode(safeText(value)));
+            }
+
+            function safeLocalUrl(url, allowedPrefixes) {
+                if (typeof url !== 'string') return '';
+                const raw = url.trim();
+                if (!raw || raw !== url || /[\\\x00-\x1f\x7f]/.test(raw)) return '';
+                const lower = raw.toLowerCase();
+                if (
+                    lower.startsWith('javascript:') ||
+                    lower.startsWith('data:') ||
+                    lower.startsWith('vbscript:') ||
+                    lower.startsWith('file:') ||
+                    lower.startsWith('blob:') ||
+                    lower.startsWith('http://') ||
+                    lower.startsWith('https://') ||
+                    lower.startsWith('//')
+                ) return '';
+
+                let parsed;
+                try {
+                    parsed = new URL(raw, window.location.origin);
+                } catch (_) {
+                    return '';
+                }
+                if (parsed.origin !== window.location.origin) return '';
+                if (!raw.startsWith('/')) return '';
+
+                let parts;
+                try {
+                    parts = parsed.pathname.split('/').map(part => decodeURIComponent(part));
+                } catch (_) {
+                    return '';
+                }
+                if (parts.includes('..')) return '';
+
+                return allowedPrefixes.some(prefix => parsed.pathname.startsWith(prefix))
+                    ? parsed.pathname + parsed.search + parsed.hash
+                    : '';
+            }
+
+            // Image and media URLs are allowlisted local paths before assignment.
+            function isSafeLocalUrl(url, allowedPrefixes = SAFE_IMAGE_URL_PREFIXES) {
+                return Boolean(safeLocalUrl(url, allowedPrefixes));
+            }
+
+            function setSafeImageSrc(img, url, fallbackUrl = '') {
+                if (!img) return false;
+                const safeUrl = safeLocalUrl(url, SAFE_IMAGE_URL_PREFIXES) || safeLocalUrl(fallbackUrl, SAFE_IMAGE_URL_PREFIXES);
+                if (!safeUrl) {
+                    img.removeAttribute('src');
+                    return false;
+                }
+                img.src = safeUrl;
+                return true;
+            }
+
+            function setSafeBackgroundImage(el, url, fallbackUrl = '') {
+                if (!el) return false;
+                const safeUrl = safeLocalUrl(url, SAFE_IMAGE_URL_PREFIXES) || safeLocalUrl(fallbackUrl, SAFE_IMAGE_URL_PREFIXES);
+                if (!safeUrl) {
+                    el.style.backgroundImage = 'none';
+                    return false;
+                }
+                el.style.backgroundImage = `url("${safeUrl.replace(/"/g, '%22')}")`;
+                return true;
+            }
+
+            function setSafeMediaSrc(el, url) {
+                if (!el) return false;
+                const safeUrl = safeLocalUrl(url, SAFE_MEDIA_URL_PREFIXES);
+                if (!safeUrl) {
+                    el.removeAttribute('src');
+                    return false;
+                }
+                el.src = safeUrl;
+                return true;
+            }
+
+            Object.assign(window, {
+                SAFE_IMAGE_URL_PREFIXES,
+                SAFE_MEDIA_URL_PREFIXES,
+                safeText,
+                setText,
+                createTextElement,
+                clearAndAppend,
+                appendTextOrNode,
+                safeLocalUrl,
+                isSafeLocalUrl,
+                setSafeImageSrc,
+                setSafeBackgroundImage,
+                setSafeMediaSrc
+            });
             const baseRefreshIntervalMs = {{ refresh_interval * 1000 }};
             let fetchTimerId = null;
 
@@ -3414,7 +3875,7 @@ function applyMode(mode) {
         if (wasVisible && mode !== 'all') {
             allBirdsCardMap.clear();
             const g = document.getElementById('all-birds-grid');
-            if (g) { if (g._familyCleanup) { g._familyCleanup(); g._familyCleanup = null; } g.innerHTML = ''; }
+            if (g) { if (g._familyCleanup) { g._familyCleanup(); g._familyCleanup = null; } g.replaceChildren(); }
             const si = document.getElementById('all-birds-search');
             if (si) { si.value = ''; allBirdsSearch = ''; }
         }
@@ -3429,7 +3890,7 @@ function applyMode(mode) {
             allTimeData = [];
             allTimeCardMap.clear();
             const g = document.getElementById('all-time-grid');
-            if (g) g.innerHTML = '';
+            if (g) g.replaceChildren();
             const si = document.getElementById('all-time-search');
             if (si) { si.value = ''; allTimeSearch = ''; }
             fetchAndUpdateAllTime();
@@ -3437,7 +3898,7 @@ function applyMode(mode) {
         if (wasVisible && !nowVisible) {
             allTimeCardMap.clear();
             const g = document.getElementById('all-time-grid');
-            if (g) { if (g._familyCleanup) { g._familyCleanup(); g._familyCleanup = null; } g.innerHTML = ''; }
+            if (g) { if (g._familyCleanup) { g._familyCleanup(); g._familyCleanup = null; } g.replaceChildren(); }
         }
     }
 
@@ -3457,32 +3918,42 @@ function applyMode(mode) {
             function updateConfidenceCircle(index, confidence) {
                 const container = document.getElementById('confidence-container-' + index);
                 if (!container) return;
-                container.dataset.confidence = confidence;
+                const safeConfidence = Math.max(0, Math.min(100, Number(confidence) || 0));
+                container.dataset.confidence = String(safeConfidence);
 
-                const isMain = (index === 0 && savedLayout !== '4g');
-                const textClass = isMain ? 'main-card' : '';
-                container.innerHTML = `
-                    <svg class="confidence-circle" viewBox="0 0 36 36">
-                        <path class="circle-bg"
-                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                        <path class="circle-progress"
-                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                        <text x="18" y="22"
-                              class="circle-text ${textClass}">${confidence}%</text>
-                    </svg>
-                `;
+                const svgNs = 'http://www.w3.org/2000/svg';
+                const svg = document.createElementNS(svgNs, 'svg');
+                svg.setAttribute('class', 'confidence-circle');
+                svg.setAttribute('viewBox', '0 0 36 36');
 
-                const progressCircle = container.querySelector('.circle-progress');
-                const textElement = container.querySelector('.circle-text');
+                const pathD = 'M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831';
+                const bgPath = document.createElementNS(svgNs, 'path');
+                bgPath.setAttribute('class', 'circle-bg');
+                bgPath.setAttribute('d', pathD);
+
+                const progressCircle = document.createElementNS(svgNs, 'path');
+                progressCircle.setAttribute('class', 'circle-progress');
+                progressCircle.setAttribute('d', pathD);
+
+                const textElement = document.createElementNS(svgNs, 'text');
+                textElement.setAttribute('x', '18');
+                textElement.setAttribute('y', '22');
+                textElement.setAttribute('class', index === 0 && savedLayout !== '4g' ? 'circle-text main-card' : 'circle-text');
+                textElement.textContent = `${safeConfidence}%`;
+
+                svg.appendChild(bgPath);
+                svg.appendChild(progressCircle);
+                svg.appendChild(textElement);
+                container.replaceChildren(svg);
+
                 const circumference = 99.99;
-
                 progressCircle.style.strokeDasharray = `${circumference}, ${circumference}`;
-                progressCircle.style.strokeDashoffset = circumference - (confidence / 100) * circumference;
+                progressCircle.style.strokeDashoffset = circumference - (safeConfidence / 100) * circumference;
 
                 let color = '#ef4444';
-                if (confidence >= 70) {
+                if (safeConfidence >= 70) {
                     color = '#22c55e';
-                } else if (confidence >= 50) {
+                } else if (safeConfidence >= 50) {
                     color = '#f97316';
                 }
 
@@ -3548,11 +4019,15 @@ function applyMode(mode) {
             }
 
             function applyClipToPlayer(entry, audioEl, specImg, metaEl, confidencePrefix) {
-                audioEl.src = entry.audio_url;
+                if (!setSafeMediaSrc(audioEl, entry.audio_url)) {
+                    audioEl.load();
+                    if (specImg) specImg.style.display = "none";
+                    if (metaEl) metaEl.textContent = "Recording path was rejected.";
+                    return;
+                }
                 audioEl.load();
                 if (specImg) {
-                    if (entry.spectrogram_url) {
-                        specImg.src = entry.spectrogram_url;
+                    if (entry.spectrogram_url && setSafeMediaSrc(specImg, entry.spectrogram_url)) {
                         specImg.style.display = "block";
                     } else {
                         specImg.style.display = "none";
@@ -3619,164 +4094,217 @@ function applyMode(mode) {
                     return;
                 }
 
-                el.innerHTML = '<p class="species-stats-loading">Loading statistics…</p>';
+                clearAndAppend(el, createTextElement('p', 'species-stats-loading', 'Loading statistics…'));
                 try {
                     const resp = await fetch(`/api/species_stats?species=${encodeURIComponent(species)}`);
                     const data = await resp.json();
                     if (!resp.ok || !data.ok) {
-                        el.innerHTML = '<p class="species-stats-loading">No statistics available.</p>';
+                        clearAndAppend(el, createTextElement('p', 'species-stats-loading', 'No statistics available.'));
                         return;
                     }
                     statsCache[species] = { data, loadedAt: Date.now() };
                     renderSpeciesStats(el, data);
                 } catch (_) {
-                    el.innerHTML = '<p class="species-stats-loading">Could not load statistics.</p>';
+                    clearAndAppend(el, createTextElement('p', 'species-stats-loading', 'Could not load statistics.'));
                 }
             }
 
             function renderSpeciesStats(el, data) {
-                const s = data.summary;
+                const s = data.summary || {};
 
-                function trendHtml(cur, prev) {
-                    if (!prev) return '';
-                    const pct = Math.round(((cur - prev) / prev) * 100);
-                    if (pct > 5)  return `<div class="species-stat-trend up">▲ ${pct}% vs prior period</div>`;
-                    if (pct < -5) return `<div class="species-stat-trend down">▼ ${Math.abs(pct)}% vs prior period</div>`;
-                    return `<div class="species-stat-trend flat">≈ flat vs prior period</div>`;
+                function fmtNum(value) {
+                    const n = Number(value);
+                    return Number.isFinite(n) ? n.toLocaleString() : '0';
                 }
 
-                function fmtDate(d) { return d ? d.slice(0, 10) : '—'; }
+                function fmtDate(d) { return typeof d === 'string' && d ? d.slice(0, 10) : '—'; }
 
                 function lastSeenText(days) {
                     if (days === 0) return 'Today';
                     if (days === 1) return 'Yesterday';
-                    return `${days}d ago`;
+                    const n = Number(days);
+                    return Number.isFinite(n) ? `${n}d ago` : '—';
                 }
 
                 function hourLabel(h) {
-                    if (h === 0)  return '12 am';
-                    if (h < 12)  return `${h} am`;
-                    if (h === 12) return '12 pm';
-                    return `${h - 12} pm`;
+                    const hour = Number(h) || 0;
+                    if (hour === 0)  return '12 am';
+                    if (hour < 12)  return `${hour} am`;
+                    if (hour === 12) return '12 pm';
+                    return `${hour - 12} pm`;
                 }
 
-                const hourly = data.hourly || [];
-                const peakHour = hourly.reduce((b, h) => h.count > b.count ? h : b, { hour: 0, count: 0 });
-                const streakText = s.streak_days > 1 ? `${s.streak_days} days`
-                                 : s.streak_days === 1 ? '1 day' : '—';
+                function trendNode(cur, prev) {
+                    const curN = Number(cur) || 0;
+                    const prevN = Number(prev) || 0;
+                    if (!prevN) return null;
+                    const pct = Math.round(((curN - prevN) / prevN) * 100);
+                    const trend = document.createElement('div');
+                    if (pct > 5) {
+                        trend.className = 'species-stat-trend up';
+                        trend.textContent = `▲ ${pct}% vs prior period`;
+                    } else if (pct < -5) {
+                        trend.className = 'species-stat-trend down';
+                        trend.textContent = `▼ ${Math.abs(pct)}% vs prior period`;
+                    } else {
+                        trend.className = 'species-stat-trend flat';
+                        trend.textContent = '≈ flat vs prior period';
+                    }
+                    return trend;
+                }
 
-                const rankLine = (data.rank?.by_total != null)
-                    ? `<p class="species-rank-line">Ranked <strong>#${data.rank.by_total}</strong> of <strong>${data.rank.total_species}</strong> species by all-time detections &nbsp;·&nbsp; Peak activity: <strong>${hourLabel(peakHour.hour)}</strong></p>`
-                    : '';
+                function statCard(value, label, trend) {
+                    const card = document.createElement('div');
+                    card.className = 'species-stat-card';
+                    card.appendChild(createTextElement('div', 'species-stat-value', value, '—'));
+                    card.appendChild(createTextElement('div', 'species-stat-label', label));
+                    if (trend) card.appendChild(trend);
+                    return card;
+                }
 
-                el.innerHTML = `
-                    <div class="species-stats-grid">
-                        <div class="species-stat-card">
-                            <div class="species-stat-value">${s.total_detections.toLocaleString()}</div>
-                            <div class="species-stat-label">All-Time Detections</div>
-                        </div>
-                        <div class="species-stat-card">
-                            <div class="species-stat-value">${s.days_detected}</div>
-                            <div class="species-stat-label">Days Detected</div>
-                        </div>
-                        <div class="species-stat-card">
-                            <div class="species-stat-value">${lastSeenText(s.days_since_last)}</div>
-                            <div class="species-stat-label">Last Seen</div>
-                        </div>
-                        <div class="species-stat-card">
-                            <div class="species-stat-value">${fmtDate(s.first_detected)}</div>
-                            <div class="species-stat-label">First Detected</div>
-                        </div>
-                        <div class="species-stat-card">
-                            <div class="species-stat-value">${s.best_confidence}%</div>
-                            <div class="species-stat-label">Best Confidence</div>
-                        </div>
-                        <div class="species-stat-card">
-                            <div class="species-stat-value">${s.avg_confidence}%</div>
-                            <div class="species-stat-label">Avg Confidence</div>
-                        </div>
-                        <div class="species-stat-card">
-                            <div class="species-stat-value">${s.detections_7d}</div>
-                            <div class="species-stat-label">Last 7 Days</div>
-                            ${trendHtml(s.detections_7d, s.detections_prev_7d)}
-                        </div>
-                        <div class="species-stat-card">
-                            <div class="species-stat-value">${s.detections_30d}</div>
-                            <div class="species-stat-label">Last 30 Days</div>
-                            ${trendHtml(s.detections_30d, s.detections_prev_30d)}
-                        </div>
-                        <div class="species-stat-card">
-                            <div class="species-stat-value">${streakText}</div>
-                            <div class="species-stat-label">Current Streak</div>
-                        </div>
-                    </div>
-                    ${rankLine}
-                    <div class="species-chart-block">
-                        <div class="species-chart-title">Activity by Hour of Day</div>
-                        <div class="species-chart-svg-wrap" id="birdStatsHourlyChart"></div>
-                    </div>
-                    <div class="species-chart-block">
-                        <div class="species-chart-title">Detections by Month (Last 18 Mo.)</div>
-                        <div class="species-chart-svg-wrap" id="birdStatsMonthlyChart"></div>
-                    </div>
-                `;
+                const hourly = Array.isArray(data.hourly) ? data.hourly : [];
+                const peakHour = hourly.reduce((b, h) => (Number(h.count) || 0) > (Number(b.count) || 0) ? h : b, { hour: 0, count: 0 });
+                const streakDays = Number(s.streak_days) || 0;
+                const streakText = streakDays > 1 ? `${streakDays} days` : streakDays === 1 ? '1 day' : '—';
 
-                renderHourlyChart(document.getElementById("birdStatsHourlyChart"), hourly);
-                renderMonthlyChart(document.getElementById("birdStatsMonthlyChart"), data.monthly || []);
+                const grid = document.createElement('div');
+                grid.className = 'species-stats-grid';
+                grid.appendChild(statCard(fmtNum(s.total_detections), 'All-Time Detections'));
+                grid.appendChild(statCard(fmtNum(s.days_detected), 'Days Detected'));
+                grid.appendChild(statCard(lastSeenText(s.days_since_last), 'Last Seen'));
+                grid.appendChild(statCard(fmtDate(s.first_detected), 'First Detected'));
+                grid.appendChild(statCard(`${fmtNum(s.best_confidence)}%`, 'Best Confidence'));
+                grid.appendChild(statCard(`${fmtNum(s.avg_confidence)}%`, 'Avg Confidence'));
+                grid.appendChild(statCard(fmtNum(s.detections_7d), 'Last 7 Days', trendNode(s.detections_7d, s.detections_prev_7d)));
+                grid.appendChild(statCard(fmtNum(s.detections_30d), 'Last 30 Days', trendNode(s.detections_30d, s.detections_prev_30d)));
+                grid.appendChild(statCard(streakText, 'Current Streak'));
+
+                const nodes = [grid];
+                if (data.rank?.by_total != null) {
+                    const rankLine = document.createElement('p');
+                    rankLine.className = 'species-rank-line';
+                    appendTextOrNode(rankLine, 'Ranked ');
+                    rankLine.appendChild(createTextElement('strong', '', `#${data.rank.by_total}`));
+                    appendTextOrNode(rankLine, ' of ');
+                    rankLine.appendChild(createTextElement('strong', '', data.rank.total_species));
+                    appendTextOrNode(rankLine, ' species by all-time detections · Peak activity: ');
+                    rankLine.appendChild(createTextElement('strong', '', hourLabel(peakHour.hour)));
+                    nodes.push(rankLine);
+                }
+
+                const hourlyBlock = document.createElement('div');
+                hourlyBlock.className = 'species-chart-block';
+                hourlyBlock.appendChild(createTextElement('div', 'species-chart-title', 'Activity by Hour of Day'));
+                const hourlyWrap = document.createElement('div');
+                hourlyWrap.className = 'species-chart-svg-wrap';
+                hourlyWrap.id = 'birdStatsHourlyChart';
+                hourlyBlock.appendChild(hourlyWrap);
+
+                const monthlyBlock = document.createElement('div');
+                monthlyBlock.className = 'species-chart-block';
+                monthlyBlock.appendChild(createTextElement('div', 'species-chart-title', 'Detections by Month (Last 18 Mo.)'));
+                const monthlyWrap = document.createElement('div');
+                monthlyWrap.className = 'species-chart-svg-wrap';
+                monthlyWrap.id = 'birdStatsMonthlyChart';
+                monthlyBlock.appendChild(monthlyWrap);
+
+                nodes.push(hourlyBlock, monthlyBlock);
+                clearAndAppend(el, ...nodes);
+
+                renderHourlyChart(hourlyWrap, hourly);
+                renderMonthlyChart(monthlyWrap, Array.isArray(data.monthly) ? data.monthly : []);
+            }
+
+            function createSvgChart(container, W, H) {
+                const svgNs = 'http://www.w3.org/2000/svg';
+                const svg = document.createElementNS(svgNs, 'svg');
+                svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+                svg.style.width = '100%';
+                svg.style.height = `${H}px`;
+                svg.style.display = 'block';
+                container.replaceChildren(svg);
+                return { svg, svgNs };
             }
 
             function renderHourlyChart(container, hourly) {
                 if (!container) return;
                 const W = 420, H = 84, pL = 4, pR = 4, pT = 4, pB = 20;
                 const cW = W - pL - pR, cH = H - pT - pB;
-                const n = hourly.length || 24;
-                const maxV = Math.max(...hourly.map(d => d.count), 1);
+                const rows = Array.isArray(hourly) && hourly.length ? hourly : Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 }));
+                const n = rows.length;
+                const maxV = Math.max(...rows.map(d => Number(d.count) || 0), 1);
                 const bw = cW / n;
-                const peakIdx = hourly.reduce((b, d, i) => d.count > hourly[b].count ? i : b, 0);
+                const peakIdx = rows.reduce((b, d, i) => (Number(d.count) || 0) > (Number(rows[b].count) || 0) ? i : b, 0);
+                const { svg, svgNs } = createSvgChart(container, W, H);
 
-                let bars = '', labels = '';
-                hourly.forEach((d, i) => {
-                    const bh = Math.max((d.count / maxV) * cH, d.count > 0 ? 1 : 0);
+                rows.forEach((d, i) => {
+                    const count = Number(d.count) || 0;
+                    const bh = Math.max((count / maxV) * cH, count > 0 ? 1 : 0);
                     const x = pL + i * bw, y = pT + cH - bh;
-                    const fill = i === peakIdx ? '#f97316' : '#4b6a88';
-                    const op = d.count === 0 ? 0.12 : 0.82;
-                    bars += `<rect x="${(x + 0.5).toFixed(1)}" y="${y.toFixed(1)}" width="${(bw - 1).toFixed(1)}" height="${bh.toFixed(1)}" fill="${fill}" rx="1.5" opacity="${op}"/>`;
+                    const rect = document.createElementNS(svgNs, 'rect');
+                    rect.setAttribute('x', (x + 0.5).toFixed(1));
+                    rect.setAttribute('y', y.toFixed(1));
+                    rect.setAttribute('width', (bw - 1).toFixed(1));
+                    rect.setAttribute('height', bh.toFixed(1));
+                    rect.setAttribute('fill', i === peakIdx ? '#f97316' : '#4b6a88');
+                    rect.setAttribute('rx', '1.5');
+                    rect.setAttribute('opacity', count === 0 ? '0.12' : '0.82');
+                    svg.appendChild(rect);
                 });
                 [[0,'12a'],[6,'6a'],[12,'12p'],[18,'6p'],[23,'11p']].forEach(([hr, lbl]) => {
                     const x = pL + hr * bw + bw / 2;
-                    labels += `<text x="${x.toFixed(1)}" y="${H - 3}" text-anchor="middle" font-size="9" fill="#9ca3af">${lbl}</text>`;
+                    const text = document.createElementNS(svgNs, 'text');
+                    text.setAttribute('x', x.toFixed(1));
+                    text.setAttribute('y', String(H - 3));
+                    text.setAttribute('text-anchor', 'middle');
+                    text.setAttribute('font-size', '9');
+                    text.setAttribute('fill', '#9ca3af');
+                    text.textContent = lbl;
+                    svg.appendChild(text);
                 });
-
-                container.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;">${bars}${labels}</svg>`;
             }
 
             function renderMonthlyChart(container, monthly) {
-                if (!container || !monthly.length) return;
+                if (!container) return;
+                const rows = Array.isArray(monthly) ? monthly : [];
+                if (!rows.length) { container.replaceChildren(); return; }
                 const W = 420, H = 96, pL = 4, pR = 4, pT = 4, pB = 22;
                 const cW = W - pL - pR, cH = H - pT - pB;
-                const n = monthly.length;
-                const maxV = Math.max(...monthly.map(d => d.count), 1);
+                const n = rows.length;
+                const maxV = Math.max(...rows.map(d => Number(d.count) || 0), 1);
                 const bw = cW / n;
                 const nowMonth = new Date().toISOString().slice(0, 7);
                 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const { svg, svgNs } = createSvgChart(container, W, H);
 
-                let bars = '', labels = '';
-                monthly.forEach((d, i) => {
-                    const bh = Math.max((d.count / maxV) * cH, d.count > 0 ? 1 : 0);
+                rows.forEach((d, i) => {
+                    const count = Number(d.count) || 0;
+                    const bh = Math.max((count / maxV) * cH, count > 0 ? 1 : 0);
                     const x = pL + i * bw, y = pT + cH - bh;
-                    const isCur = d.month === nowMonth;
-                    const fill = isCur ? '#f97316' : '#4b6a88';
-                    const op = d.count === 0 ? 0.10 : 0.82;
-                    bars += `<rect x="${(x + 0.5).toFixed(1)}" y="${y.toFixed(1)}" width="${(bw - 1).toFixed(1)}" height="${bh.toFixed(1)}" fill="${fill}" rx="1.5" opacity="${op}"/>`;
+                    const rect = document.createElementNS(svgNs, 'rect');
+                    rect.setAttribute('x', (x + 0.5).toFixed(1));
+                    rect.setAttribute('y', y.toFixed(1));
+                    rect.setAttribute('width', (bw - 1).toFixed(1));
+                    rect.setAttribute('height', bh.toFixed(1));
+                    rect.setAttribute('fill', d.month === nowMonth ? '#f97316' : '#4b6a88');
+                    rect.setAttribute('rx', '1.5');
+                    rect.setAttribute('opacity', count === 0 ? '0.10' : '0.82');
+                    svg.appendChild(rect);
 
                     if (i % 3 === 0 || i === n - 1) {
-                        const parts = d.month.split('-');
-                        const lbl = `${MONTHS[parseInt(parts[1]) - 1]} '${parts[0].slice(2)}`;
-                        labels += `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle" font-size="9" fill="#9ca3af">${lbl}</text>`;
+                        const parts = safeText(d.month).split('-');
+                        const monthIdx = Math.max(0, Math.min(11, parseInt(parts[1], 10) - 1));
+                        const lbl = parts.length === 2 ? `${MONTHS[monthIdx]} '${parts[0].slice(2)}` : safeText(d.month, '');
+                        const text = document.createElementNS(svgNs, 'text');
+                        text.setAttribute('x', (x + bw / 2).toFixed(1));
+                        text.setAttribute('y', String(H - 4));
+                        text.setAttribute('text-anchor', 'middle');
+                        text.setAttribute('font-size', '9');
+                        text.setAttribute('fill', '#9ca3af');
+                        text.textContent = lbl;
+                        svg.appendChild(text);
                     }
                 });
-
-                container.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block;">${bars}${labels}</svg>`;
             }
             // ── End Species Statistics ──────────────────────────────────
 
@@ -3826,12 +4354,12 @@ window.loadBirdMenuPhotoBrowser = async function () {
 
     if (!speciesFolder) {
         statusEl.textContent = "No species selected.";
-        grid.innerHTML = "";
+        grid.replaceChildren();
         return;
     }
 
     statusEl.textContent = "Loading...";
-    grid.innerHTML = "";
+    grid.replaceChildren();
 
     try {
         const res = await fetch(`/api/bird_images?species_folder=${encodeURIComponent(speciesFolder)}`);
@@ -3853,8 +4381,10 @@ window.loadBirdMenuPhotoBrowser = async function () {
 
             const thumb = document.createElement("img");
             thumb.className = "bird-menu-photo-thumb";
-            thumb.src = img.url;
-            thumb.alt = img.name;
+            if (!setSafeImageSrc(thumb, img.url)) {
+                thumb.style.display = "none";
+            }
+            thumb.alt = safeText(img.name, "Bird photo");
             thumb.loading = "lazy";
 
             const footer = document.createElement("div");
@@ -3876,7 +4406,7 @@ window.loadBirdMenuPhotoBrowser = async function () {
                 delBtn.textContent = "Deleting...";
 
                 try {
-                    const delRes = await fetch("/api/bird_images", {
+                    const delRes = await adminFetch("/api/bird_images", {
                         method: "DELETE",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ species_folder: speciesFolder, filename: img.name })
@@ -3957,9 +4487,12 @@ if (!bird) {
     // Image / background
     if (imgElem) {
         if (placeholderImg) {
-            imgElem.src = placeholderImg;
-            imgElem.alt = "No bird detections yet";
-            imgElem.style.display = "block";
+            if (setSafeImageSrc(imgElem, placeholderImg)) {
+                imgElem.alt = "No bird detections yet";
+                imgElem.style.display = "block";
+            } else {
+                imgElem.style.display = "none";
+            }
         } else {
             imgElem.style.display = "none";
             imgElem.src = "";
@@ -3968,7 +4501,7 @@ if (!bird) {
 
     if (bgElem) {
         if (placeholderImg) {
-            bgElem.style.backgroundImage = `url(${placeholderImg})`;
+            setSafeBackgroundImage(bgElem, placeholderImg);
         } else {
             bgElem.style.backgroundImage = "none";
         }
@@ -4064,9 +4597,12 @@ if (!bird) {
                 // Image + background for normal birds (will be overridden in special states)
                 if (imgElem) {
                     if (imageUrlToUse) {
-                        imgElem.src = imageUrlToUse;
-                        imgElem.alt = bird.name || "Bird";
-                        imgElem.style.display = "block";
+                        if (setSafeImageSrc(imgElem, imageUrlToUse)) {
+                            imgElem.alt = safeText(bird.name, "Bird");
+                            imgElem.style.display = "block";
+                        } else {
+                            imgElem.style.display = "none";
+                        }
                     } else {
                         imgElem.style.display = "none";
                         imgElem.src = "";
@@ -4075,7 +4611,7 @@ if (!bird) {
 
                 if (bgElem) {
                     if (imageUrlToUse) {
-                        bgElem.style.backgroundImage = `url(${imageUrlToUse})`;
+                        setSafeBackgroundImage(bgElem, imageUrlToUse);
                     } else {
                         bgElem.style.backgroundImage = "none";
                     }
@@ -4149,7 +4685,7 @@ card.onclick = function (ev) {
                     if (copyrightElem) {
                         const folderPath =
                             bird.folder_path ||
-                            `/home/birdpi/birdnet_display/static/bird_images_cache/${bird.folder_name || ""}`;
+                            `configured image cache/${bird.folder_name || ""}`;
 
                         copyrightElem.style.display = "block";
                         copyrightElem.textContent =
@@ -4423,7 +4959,7 @@ function _renderGrid(grid, countEl, data, cardMap, sort, search) {
         grid._familyCleanup = null;
     }
 
-    grid.innerHTML = '';
+    grid.replaceChildren();
 
     let birds = data.slice();
     if (search) {
@@ -4643,6 +5179,31 @@ window.addEventListener('resize', () => {
     _fitBirdsGrid('all-time-overlay',  allTimeData.length,  allTimeSort);
 });
 
+function createAllBirdCard(bird, conf, timeText) {
+    const card = document.createElement('div');
+    card.className = 'all-bird-card';
+
+    const bg = document.createElement('div');
+    if (bird?.image_url && setSafeBackgroundImage(bg, bird.image_url)) {
+        bg.className = 'abc-bg';
+    } else {
+        bg.className = 'abc-no-image';
+    }
+    const scrim = document.createElement('div');
+    scrim.className = 'abc-scrim';
+    card.appendChild(bg);
+    card.appendChild(scrim);
+
+    if (conf) card.appendChild(createTextElement('div', 'abc-conf', conf));
+
+    const info = document.createElement('div');
+    info.className = 'abc-info';
+    info.appendChild(createTextElement('p', 'abc-name', bird?.name, ''));
+    info.appendChild(createTextElement('p', 'abc-time', timeText, ''));
+    card.appendChild(info);
+    return card;
+}
+
 async function fetchAndUpdateAllTime() {
     const grid = document.getElementById('all-time-grid');
     const countEl = document.getElementById('all-time-count');
@@ -4656,19 +5217,11 @@ async function fetchAndUpdateAllTime() {
 
         allTimeData = birds;
         allTimeCardMap.clear();
-        grid.innerHTML = '';
+        grid.replaceChildren();
 
         birds.forEach(bird => {
-            const card = document.createElement('div');
-            card.className = 'all-bird-card';
-            const conf = bird.confidence || (bird.confidence_value != null ? bird.confidence_value + '%' : '');
-            if (bird.image_url) {
-                card.innerHTML = `<div class="abc-bg" style="background-image:url(${bird.image_url})"></div><div class="abc-scrim"></div>`;
-            } else {
-                card.innerHTML = `<div class="abc-no-image"></div><div class="abc-scrim"></div>`;
-            }
-            if (conf) card.innerHTML += `<div class="abc-conf">${conf}</div>`;
-            card.innerHTML += `<div class="abc-info"><p class="abc-name">${bird.name || ''}</p><p class="abc-time">${bird.time_display || ''}</p></div>`;
+            const conf = safeText(bird.confidence || (bird.confidence_value != null ? bird.confidence_value + '%' : ''));
+            const card = createAllBirdCard(bird, conf, safeText(bird.time_display));
 
             const entry = { card, bird };
             allTimeCardMap.set(bird.name, entry);
@@ -4724,17 +5277,8 @@ async function fetchAndUpdateAll() {
                 if (timeEl) timeEl.textContent = timeText;
                 if (confEl) confEl.textContent = conf;
             } else {
-                // First time seeing this species — build the card
-                const card = document.createElement('div');
-                card.className = 'all-bird-card';
-
-                if (bird.image_url) {
-                    card.innerHTML = `<div class="abc-bg" style="background-image:url(${bird.image_url})"></div><div class="abc-scrim"></div>`;
-                } else {
-                    card.innerHTML = `<div class="abc-no-image"></div><div class="abc-scrim"></div>`;
-                }
-                if (conf) card.innerHTML += `<div class="abc-conf">${conf}</div>`;
-                card.innerHTML += `<div class="abc-info"><p class="abc-name">${bird.name || ''}</p><p class="abc-time">${timeText}</p></div>`;
+                // First time seeing this species — build the card without parsing live API data as HTML.
+                const card = createAllBirdCard(bird, conf, timeText);
 
                 const entry = { card, bird };
                 allBirdsCardMap.set(bird.name, entry);
@@ -4830,7 +5374,7 @@ async function fetchAndUpdateAll() {
                 const activeSlot = getActiveSlot(sched);
                 const activeKey = activeSlot ? activeSlot.start + '|' + activeSlot.mode : null;
 
-                list.innerHTML = '';
+                list.replaceChildren();
 
                 if (!sorted.length) {
                     const hint = document.createElement('p');
@@ -5325,119 +5869,150 @@ async function fetchAndUpdateAll() {
     function renderSingleDay() {
         var host = el('bdi-single-content');
         if (!host) return;
+        host.replaceChildren();
 
-        var picker = el('bdi-day-picker');
-        if (picker && picker.value !== bdiCurrentDate) {
+        var picker = el('bdi-date-picker');
+        if (picker) {
+            picker.max = bdiTodayStr || todayClient();
             picker.value = bdiCurrentDate || '';
         }
 
-        // Next button disabled if already at/after today
         var nextBtn = el('bdi-day-next');
         if (nextBtn) {
             nextBtn.disabled = !bdiCurrentDate || bdiCurrentDate >= (bdiTodayStr || todayClient());
         }
 
         if (!bdiCurrentDate) {
-            host.innerHTML = '<div class="bdi-empty">No date selected.</div>';
+            host.appendChild(createTextElement('div', 'bdi-empty', 'No date selected.'));
             return;
         }
 
         if (isFutureDate(bdiCurrentDate)) {
-            host.innerHTML =
-                '<div class="bdi-empty">'
-              + '<strong>' + friendlyDate(bdiCurrentDate) + '</strong><br>'
-              + 'This date is in the future — no data yet.'
-              + '</div>';
+            host.appendChild(bdiEmptyMessage(friendlyDate(bdiCurrentDate), 'This date is in the future — no data yet.'));
             return;
         }
 
         var row = bdiByDate[bdiCurrentDate];
         if (!row) {
-            host.innerHTML =
-                '<div class="bdi-empty">'
-              + '<strong>' + friendlyDate(bdiCurrentDate) + '</strong><br>'
-              + 'No detections recorded for this day.'
-              + '</div>';
+            host.appendChild(bdiEmptyMessage(friendlyDate(bdiCurrentDate), 'No detections recorded for this day.'));
             return;
         }
 
         var tier = scoreTier(row.final_score);
         var bg = tierColor(tier);
+        var card = document.createElement('div');
+        card.className = 'bdi-day-card';
+        card.appendChild(createTextElement('div', 'bdi-day-date', friendlyDate(row.detection_date)));
 
-        host.innerHTML =
-            '<div class="bdi-day-card">'
-          +   '<div class="bdi-day-date">' + friendlyDate(row.detection_date) + '</div>'
-          +   '<div class="bdi-thermo-row">'
-          +     buildThermometer(row.final_score, bg)
-          +     '<div class="bdi-thermo-info">'
-          +       '<div class="bdi-day-score" style="color:' + bg + ';">'
-          +         row.final_score
-          +         '<span class="bdi-day-score-max"> / 100</span>'
-          +       '</div>'
-          +       '<div class="bdi-day-rating">' + escapeHtml(row.bird_day_rating) + '</div>'
-          +     '</div>'
-          +   '</div>'
-          +   '<div class="bdi-day-stats">'
-          +     statBlock('Detections', row.daily_detections)
-          +     statBlock(avgLabel(), row.all_time_daily_avg)
-          +     statBlock('New species', row.new_species_count)
-          +     statBlock('Rare species', row.rare_species_count)
-          +   '</div>'
-          + '</div>';
+        var thermoRow = document.createElement('div');
+        thermoRow.className = 'bdi-thermo-row';
+        thermoRow.appendChild(buildThermometerNode(row.final_score, bg));
+        var info = document.createElement('div');
+        info.className = 'bdi-thermo-info';
+        var score = createTextElement('div', 'bdi-day-score', row.final_score, '0');
+        score.style.color = bg;
+        score.appendChild(createTextElement('span', 'bdi-day-score-max', ' / 100'));
+        info.appendChild(score);
+        info.appendChild(createTextElement('div', 'bdi-day-rating', row.bird_day_rating, 'Unknown'));
+        thermoRow.appendChild(info);
+        card.appendChild(thermoRow);
+
+        var stats = document.createElement('div');
+        stats.className = 'bdi-day-stats';
+        stats.appendChild(statBlockNode('Detections', row.daily_detections));
+        stats.appendChild(statBlockNode(avgLabel(), row.all_time_daily_avg));
+        stats.appendChild(statBlockNode('New species', row.new_species_count));
+        stats.appendChild(statBlockNode('Rare species', row.rare_species_count));
+        card.appendChild(stats);
+        host.appendChild(card);
     }
 
-    // Label for the average-detections stat changes with the active dataset.
+    function bdiEmptyMessage(title, message) {
+        var empty = document.createElement('div');
+        empty.className = 'bdi-empty';
+        empty.appendChild(createTextElement('strong', '', title));
+        empty.appendChild(document.createElement('br'));
+        appendTextOrNode(empty, message);
+        return empty;
+    }
+
     function avgLabel() {
         return (bdiDataset === 'v2') ? 'Recent daily avg (30d)' : 'All-time daily avg';
     }
 
-    // Build a thermometer SVG that visualizes the score 0-100 as a fill level.
-    // The stem + bulb are drawn as a single path so the outline is seamless.
-    function buildThermometer(score, color) {
+    function buildThermometerNode(score, color) {
         var s = Math.max(0, Math.min(100, Number(score) || 0));
-        // Stem runs y=20 (top) to y=185 (bottom), bulb center (50,200) r=28.
-        // Fill rect drops from (185 - 1.65*s) down, clipped to the thermometer shape.
-        var fillTop    = 185 - 1.65 * s;
+        var fillTop = 185 - 1.65 * s;
         var fillHeight = 240 - fillTop;
         var shape = 'M 40 30 Q 40 20 50 20 Q 60 20 60 30 L 60 185 A 28 28 0 1 1 40 185 Z';
-        var safeColor = String(color).replace(/[^#0-9a-zA-Z,().% ]/g, '');
+        var safeColor = String(color).replace(/[^#0-9a-zA-Z,().% ]/g, '') || '#888';
+        var svgNs = 'http://www.w3.org/2000/svg';
+        var svg = document.createElementNS(svgNs, 'svg');
+        svg.setAttribute('class', 'bdi-thermo-svg');
+        svg.setAttribute('viewBox', '0 0 110 240');
+        svg.setAttribute('aria-hidden', 'true');
 
-        return ''
-          + '<svg class="bdi-thermo-svg" viewBox="0 0 110 240" '
-          +      'xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
-          +   '<defs>'
-          +     '<clipPath id="bdi-thermo-clip-v1">'
-          +       '<path d="' + shape + '"/>'
-          +     '</clipPath>'
-          +   '</defs>'
-          +   '<path d="' + shape + '" fill="#f3f4f6"/>'
-          +   '<g class="bdi-thermo-fill" clip-path="url(#bdi-thermo-clip-v1)">'
-          +     '<rect x="0" y="' + fillTop + '" width="110" height="' + fillHeight
-          +     '" fill="' + safeColor + '"/>'
-          +   '</g>'
-          +   '<path d="' + shape + '" fill="none" stroke="#222" '
-          +        'stroke-width="2.5" stroke-linejoin="round"/>'
-          +   '<g stroke="#555" stroke-width="1.2" fill="#444" '
-          +      'font-size="9" font-family="Arial, sans-serif">'
-          +     '<line x1="62" y1="30"  x2="72" y2="30"/>'
-          +     '<text x="74" y="33">100</text>'
-          +     '<line x1="62" y1="71"  x2="68" y2="71"/>'
-          +     '<text x="70" y="74">75</text>'
-          +     '<line x1="62" y1="112" x2="72" y2="112"/>'
-          +     '<text x="74" y="115">50</text>'
-          +     '<line x1="62" y1="153" x2="68" y2="153"/>'
-          +     '<text x="70" y="156">25</text>'
-          +     '<line x1="62" y1="185" x2="72" y2="185"/>'
-          +     '<text x="74" y="188">0</text>'
-          +   '</g>'
-          + '</svg>';
+        var defs = document.createElementNS(svgNs, 'defs');
+        var clip = document.createElementNS(svgNs, 'clipPath');
+        clip.setAttribute('id', 'bdi-thermo-clip-v1');
+        var clipPath = document.createElementNS(svgNs, 'path');
+        clipPath.setAttribute('d', shape);
+        clip.appendChild(clipPath);
+        defs.appendChild(clip);
+        svg.appendChild(defs);
+
+        var bgPath = document.createElementNS(svgNs, 'path');
+        bgPath.setAttribute('d', shape);
+        bgPath.setAttribute('fill', '#f3f4f6');
+        svg.appendChild(bgPath);
+
+        var fillGroup = document.createElementNS(svgNs, 'g');
+        fillGroup.setAttribute('class', 'bdi-thermo-fill');
+        fillGroup.setAttribute('clip-path', 'url(#bdi-thermo-clip-v1)');
+        var rect = document.createElementNS(svgNs, 'rect');
+        rect.setAttribute('x', '0');
+        rect.setAttribute('y', String(fillTop));
+        rect.setAttribute('width', '110');
+        rect.setAttribute('height', String(fillHeight));
+        rect.setAttribute('fill', safeColor);
+        fillGroup.appendChild(rect);
+        svg.appendChild(fillGroup);
+
+        var outline = document.createElementNS(svgNs, 'path');
+        outline.setAttribute('d', shape);
+        outline.setAttribute('fill', 'none');
+        outline.setAttribute('stroke', '#222');
+        outline.setAttribute('stroke-width', '2.5');
+        outline.setAttribute('stroke-linejoin', 'round');
+        svg.appendChild(outline);
+
+        var ticks = document.createElementNS(svgNs, 'g');
+        ticks.setAttribute('stroke', '#555');
+        ticks.setAttribute('stroke-width', '1.2');
+        ticks.setAttribute('fill', '#444');
+        ticks.setAttribute('font-size', '9');
+        ticks.setAttribute('font-family', 'Arial, sans-serif');
+        [[30,72,'100'],[71,68,'75'],[112,72,'50'],[153,68,'25'],[185,72,'0']].forEach(function (t) {
+            var line = document.createElementNS(svgNs, 'line');
+            line.setAttribute('x1', '62'); line.setAttribute('y1', String(t[0]));
+            line.setAttribute('x2', String(t[1])); line.setAttribute('y2', String(t[0]));
+            ticks.appendChild(line);
+            var label = document.createElementNS(svgNs, 'text');
+            label.setAttribute('x', String(t[1] + 2));
+            label.setAttribute('y', String(t[0] + 3));
+            label.textContent = t[2];
+            ticks.appendChild(label);
+        });
+        svg.appendChild(ticks);
+        return svg;
     }
 
-    function statBlock(label, value) {
-        return '<div class="bdi-stat">'
-             +   '<div class="bdi-stat-label">' + escapeHtml(label) + '</div>'
-             +   '<div class="bdi-stat-value">' + escapeHtml(String(value)) + '</div>'
-             + '</div>';
+    function statBlockNode(label, value) {
+        var block = document.createElement('div');
+        block.className = 'bdi-stat';
+        block.appendChild(createTextElement('div', 'bdi-stat-label', label));
+        block.appendChild(createTextElement('div', 'bdi-stat-value', value, '0'));
+        return block;
     }
 
     function escapeHtml(s) {
@@ -5446,126 +6021,116 @@ async function fetchAndUpdateAll() {
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
-    // ---- View: 10-Day ----
     function renderTenDay() {
         var host = el('bdi-tenday-content');
         if (!host) return;
+        host.replaceChildren();
 
-        var rows = (bdiData && bdiData.rows) ? bdiData.rows : [];
+        var rows = (bdiData && Array.isArray(bdiData.rows)) ? bdiData.rows : [];
         if (!rows.length) {
-            host.innerHTML = '<div class="bdi-empty">No detection history yet.</div>';
+            host.appendChild(createTextElement('div', 'bdi-empty', 'No detection history yet.'));
             return;
         }
 
         var take = rows.slice(0, 10);
-
-        // -------- Mini rainbow bar chart (oldest left, newest right) --------
         var chartDays = take.slice().reverse();
-        var chartHtml = ''
-          + '<div class="bdi-tenday-chart-wrap">'
-          +   '<div class="bdi-tenday-chart">'
-          +     '<div class="bdi-tenday-gridline" style="bottom: 25%;"></div>'
-          +     '<div class="bdi-tenday-gridline" style="bottom: 50%;"></div>'
-          +     '<div class="bdi-tenday-gridline" style="bottom: 75%;"></div>'
-          +     '<div class="bdi-tenday-gridline-label" style="bottom: 75%;">75</div>'
-          +     '<div class="bdi-tenday-gridline-label" style="bottom: 50%;">50</div>'
-          +     '<div class="bdi-tenday-gridline-label" style="bottom: 25%;">25</div>';
-        for (var c = 0; c < chartDays.length; c++) {
-            var cd = chartDays[c];
+        var chartWrap = document.createElement('div');
+        chartWrap.className = 'bdi-tenday-chart-wrap';
+        var chart = document.createElement('div');
+        chart.className = 'bdi-tenday-chart';
+        [25,50,75].forEach(function (pct) {
+            var line = document.createElement('div');
+            line.className = 'bdi-tenday-gridline';
+            line.style.bottom = pct + '%';
+            chart.appendChild(line);
+        });
+        [75,50,25].forEach(function (pct) {
+            var label = createTextElement('div', 'bdi-tenday-gridline-label', pct);
+            label.style.bottom = pct + '%';
+            chart.appendChild(label);
+        });
+        chartDays.forEach(function (cd) {
             var cTier = scoreTier(cd.final_score);
             var cColor = tierColor(cTier);
             var cScore = Number(cd.final_score) || 0;
-            var cHeightPct = Math.max(4, cScore); // min 4% so zero-score bars are still visible
-            // Short date label (e.g. "Apr 22")
+            var cHeightPct = Math.max(4, cScore);
             var dObj = parseDate(cd.detection_date);
             var shortDate = dObj
               ? (dObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) || cd.detection_date)
               : cd.detection_date;
-            chartHtml +=
-                '<div class="bdi-tenday-bar" '
-              +   'data-bdi-date="' + escapeHtml(cd.detection_date) + '" '
-              +   'style="height:' + cHeightPct + '%; background:' + cColor + ';" '
-              +   'title="' + escapeHtml(friendlyDate(cd.detection_date) + ' \u2014 ' + cScore + ' (' + cd.bird_day_rating + ')') + '">'
-              +   '<span class="bdi-tenday-bar-val">' + cScore + '</span>'
-              +   '<span class="bdi-tenday-bar-date">' + escapeHtml(shortDate) + '</span>'
-              + '</div>';
-        }
-        chartHtml += '</div></div>';
+            var bar = document.createElement('div');
+            bar.className = 'bdi-tenday-bar';
+            bar.dataset.bdiDate = safeText(cd.detection_date);
+            bar.style.height = cHeightPct + '%';
+            bar.style.background = cColor;
+            bar.title = friendlyDate(cd.detection_date) + ' — ' + cScore + ' (' + safeText(cd.bird_day_rating, 'Unknown') + ')';
+            bar.appendChild(createTextElement('span', 'bdi-tenday-bar-val', cScore));
+            bar.appendChild(createTextElement('span', 'bdi-tenday-bar-date', shortDate));
+            chart.appendChild(bar);
+        });
+        chartWrap.appendChild(chart);
 
-        // -------- Row list (existing behavior, rainbow badges via tierColor) --------
-        var listHtml = '<div class="bdi-list">';
-        for (var i = 0; i < take.length; i++) {
-            var r = take[i];
-            var tier = scoreTier(r.final_score);
-            var bg = tierColor(tier);
-            listHtml +=
-                '<div class="bdi-list-row" data-bdi-date="' + escapeHtml(r.detection_date) + '">'
-              +   '<div class="bdi-list-date">' + friendlyDate(r.detection_date) + '</div>'
-              +   '<div class="bdi-score-badge" style="background-color:' + bg + ';">'
-              +     r.final_score
-              +   '</div>'
-              +   '<div class="bdi-list-rating">' + escapeHtml(r.bird_day_rating) + '</div>'
-              +   '<div class="bdi-list-count">' + r.daily_detections + ' det.</div>'
-              + '</div>';
-        }
-        listHtml += '</div>';
+        var list = document.createElement('div');
+        list.className = 'bdi-list';
+        take.forEach(function (r) {
+            var row = document.createElement('div');
+            row.className = 'bdi-list-row';
+            row.dataset.bdiDate = safeText(r.detection_date);
+            row.appendChild(createTextElement('div', 'bdi-list-date', friendlyDate(r.detection_date)));
+            var badge = createTextElement('div', 'bdi-score-badge', r.final_score, '0');
+            badge.style.backgroundColor = tierColor(scoreTier(r.final_score));
+            row.appendChild(badge);
+            row.appendChild(createTextElement('div', 'bdi-list-rating', r.bird_day_rating, 'Unknown'));
+            row.appendChild(createTextElement('div', 'bdi-list-count', `${Number(r.daily_detections) || 0} det.`));
+            list.appendChild(row);
+        });
 
+        host.appendChild(chartWrap);
+        host.appendChild(list);
         if (take.length < 10) {
-            listHtml += '<div style="color:#666;font-size:0.85em;margin-top:10px;text-align:center;">'
-                      + 'Showing ' + take.length + ' day(s) \u2014 fewer than 10 days of data available.'
-                      + '</div>';
+            var note = createTextElement('div', '', `Showing ${take.length} day(s) — fewer than 10 days of data available.`);
+            note.style.cssText = 'color:#666;font-size:0.85em;margin-top:10px;text-align:center;';
+            host.appendChild(note);
         }
 
-        host.innerHTML = chartHtml + listHtml;
-
-        // Tapping a row jumps to Single Day for that date
         var rowsEl = host.querySelectorAll('.bdi-list-row');
         for (var j = 0; j < rowsEl.length; j++) {
             rowsEl[j].addEventListener('click', function () {
                 var d = this.getAttribute('data-bdi-date');
-                if (d) {
-                    bdiCurrentDate = d;
-                    switchView('single');
-                }
+                if (d) { bdiCurrentDate = d; switchView('single'); }
             });
         }
-
-        // Tapping a bar also jumps to Single Day
         var bars = host.querySelectorAll('.bdi-tenday-bar');
         for (var b = 0; b < bars.length; b++) {
             bars[b].addEventListener('click', function () {
                 var d = this.getAttribute('data-bdi-date');
-                if (d) {
-                    bdiCurrentDate = d;
-                    switchView('single');
-                }
+                if (d) { bdiCurrentDate = d; switchView('single'); }
             });
         }
     }
 
-    // ---- View: Heatmap ----
     function renderHeatmap() {
         var grid = el('bdi-heatmap-grid');
         var monthsEl = el('bdi-heatmap-months');
         var yearLabel = el('bdi-year-label');
         var detail = el('bdi-heatmap-detail');
         if (!grid || !monthsEl || !yearLabel) return;
+        grid.replaceChildren();
+        monthsEl.replaceChildren();
 
         if (!bdiHeatmapYear) {
             bdiHeatmapYear = parseInt((bdiTodayStr || todayClient()).slice(0, 4), 10);
         }
-
         yearLabel.textContent = bdiHeatmapYear;
 
         var year = bdiHeatmapYear;
         var jan1 = new Date(year, 0, 1);
         var dec31 = new Date(year, 11, 31);
-        var startDow = jan1.getDay(); // 0 = Sunday ... 6 = Saturday
-
-        // Build cells: leading blanks for Jan 1's weekday, then each day of the year
-        var cellsHtml = '';
-        for (var b = 0; b < startDow; b++) {
-            cellsHtml += '<div class="bdi-heatmap-cell empty"></div>';
+        var startDow = jan1.getDay();
+        for (var blank = 0; blank < startDow; blank++) {
+            var empty = document.createElement('div');
+            empty.className = 'bdi-heatmap-cell empty';
+            grid.appendChild(empty);
         }
 
         var cur = new Date(year, 0, 1);
@@ -5574,50 +6139,36 @@ async function fetchAndUpdateAll() {
             var row = bdiByDate[dateStr];
             var future = isFutureDate(dateStr);
             var tier = future ? 'future' : scoreTier(row ? row.final_score : null);
-            var extraCls = future ? 'future' : tier;
+            var cell = document.createElement('div');
+            cell.className = 'bdi-heatmap-cell ' + (future ? 'future' : tier);
+            cell.dataset.bdiDate = dateStr;
             var titleTxt = friendlyDate(dateStr);
-            if (future) {
-                titleTxt += ' — future';
-            } else if (row) {
-                titleTxt += ' — ' + row.bird_day_rating + ' (' + row.final_score + ')';
-            } else {
-                titleTxt += ' — no data';
-            }
-            cellsHtml +=
-                '<div class="bdi-heatmap-cell ' + extraCls + '" '
-              + 'data-bdi-date="' + dateStr + '" '
-              + 'title="' + escapeHtml(titleTxt) + '"></div>';
+            if (future) titleTxt += ' — future';
+            else if (row) titleTxt += ' — ' + safeText(row.bird_day_rating, 'Unknown') + ' (' + safeText(row.final_score, '0') + ')';
+            else titleTxt += ' — no data';
+            cell.title = titleTxt;
+            grid.appendChild(cell);
             cur.setDate(cur.getDate() + 1);
         }
 
-        grid.innerHTML = cellsHtml;
-
-        // Month labels — place each month at the column of its first day
-        // Column index = floor((startDow + dayOfYearOfMonth1) / 7)
-        var cellTotal = 14 + 2; // cell width + gap
-        var monthsHtml = '';
+        var cellTotal = 14 + 2;
         var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         for (var mIdx = 0; mIdx < 12; mIdx++) {
             var firstOfMonth = new Date(year, mIdx, 1);
             var dayOfYear = Math.round((firstOfMonth - jan1) / 86400000);
             var col = Math.floor((startDow + dayOfYear) / 7);
-            var leftPx = col * cellTotal;
-            monthsHtml += '<span style="left:' + leftPx + 'px;">' + monthNames[mIdx] + '</span>';
-        }
-        monthsEl.innerHTML = monthsHtml;
-
-        // Detail pane: default message, or show selected day if set
-        if (detail) {
-            detail.innerHTML = 'Tap any day to see its Bird Day Index details.';
+            var label = createTextElement('span', '', monthNames[mIdx]);
+            label.style.left = (col * cellTotal) + 'px';
+            monthsEl.appendChild(label);
         }
 
-        // Wire cell taps
+        if (detail) detail.textContent = 'Tap any day to see its Bird Day Index details.';
+
         var cells = grid.querySelectorAll('.bdi-heatmap-cell');
         for (var k = 0; k < cells.length; k++) {
-            cells[k].addEventListener('click', function (e) {
+            cells[k].addEventListener('click', function () {
                 var d = this.getAttribute('data-bdi-date');
                 if (!d) return;
-                // Clear previous selection
                 var prev = grid.querySelector('.bdi-heatmap-cell.selected');
                 if (prev) prev.classList.remove('selected');
                 this.classList.add('selected');
@@ -5625,7 +6176,6 @@ async function fetchAndUpdateAll() {
             });
         }
 
-        // Year-nav buttons: disable "next" if we'd go past current year
         var nextBtn = el('bdi-year-next');
         if (nextBtn) {
             var todayYear = parseInt((bdiTodayStr || todayClient()).slice(0, 4), 10);
@@ -5636,38 +6186,42 @@ async function fetchAndUpdateAll() {
     function showHeatmapDetail(dateStr) {
         var detail = el('bdi-heatmap-detail');
         if (!detail) return;
+        detail.replaceChildren();
 
         if (isFutureDate(dateStr)) {
-            detail.innerHTML =
-                '<strong>' + friendlyDate(dateStr) + '</strong><br>'
-              + '<span style="color:#666;">Future date — no data yet.</span>';
+            detail.appendChild(createTextElement('strong', '', friendlyDate(dateStr)));
+            detail.appendChild(document.createElement('br'));
+            var future = createTextElement('span', '', 'Future date — no data yet.');
+            future.style.color = '#666';
+            detail.appendChild(future);
             return;
         }
 
         var row = bdiByDate[dateStr];
         if (!row) {
-            detail.innerHTML =
-                '<strong>' + friendlyDate(dateStr) + '</strong><br>'
-              + '<span style="color:#666;">No detections recorded.</span>';
+            detail.appendChild(createTextElement('strong', '', friendlyDate(dateStr)));
+            detail.appendChild(document.createElement('br'));
+            var none = createTextElement('span', '', 'No detections recorded.');
+            none.style.color = '#666';
+            detail.appendChild(none);
             return;
         }
 
-        detail.innerHTML =
-            '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">'
-          +   '<div class="bdi-score-badge" style="background-color:'
-          +     tierColor(scoreTier(row.final_score)) + ';">'
-          +     row.final_score
-          +   '</div>'
-          +   '<div>'
-          +     '<div style="font-weight:600;">' + friendlyDate(dateStr) + '</div>'
-          +     '<div>' + escapeHtml(row.bird_day_rating) + '</div>'
-          +     '<div style="color:#666;font-size:0.9em;">'
-          +       row.daily_detections + ' detections · '
-          +       row.new_species_count + ' new · '
-          +       row.rare_species_count + ' rare'
-          +     '</div>'
-          +   '</div>'
-          + '</div>';
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'display:flex;align-items:center;gap:12px;flex-wrap:wrap;';
+        var badge = createTextElement('div', 'bdi-score-badge', row.final_score, '0');
+        badge.style.backgroundColor = tierColor(scoreTier(row.final_score));
+        wrap.appendChild(badge);
+        var info = document.createElement('div');
+        var date = createTextElement('div', '', friendlyDate(dateStr));
+        date.style.fontWeight = '600';
+        info.appendChild(date);
+        info.appendChild(createTextElement('div', '', row.bird_day_rating, 'Unknown'));
+        var stats = createTextElement('div', '', `${Number(row.daily_detections) || 0} detections · ${Number(row.new_species_count) || 0} new · ${Number(row.rare_species_count) || 0} rare`);
+        stats.style.cssText = 'color:#666;font-size:0.9em;';
+        info.appendChild(stats);
+        wrap.appendChild(info);
+        detail.appendChild(wrap);
     }
 
     // ---- Tab / view switching ----
@@ -5900,9 +6454,20 @@ async function fetchAndUpdateAll() {
         }
     }
 
-    function setStatus(html) {
+    function statusLine(color, ...parts) {
+        const span = document.createElement('span');
+        span.style.color = color;
+        parts.forEach(part => appendTextOrNode(span, part));
+        return span;
+    }
+
+    function strongStatus(value) {
+        return createTextElement('strong', '', value);
+    }
+
+    function setStatus(...nodes) {
         const el = document.getElementById('autoplay-status');
-        if (el) el.innerHTML = html;
+        if (el) clearAndAppend(el, ...nodes);
     }
 
     let bgAudio = null;
@@ -5942,7 +6507,9 @@ async function fetchAndUpdateAll() {
                 if (cd.ok && cd.audio_url) {
                     showNowPlayingToast(s.name);
                     setTestStatus('▶ Playing: ' + s.name);
-                    const testAudio = new Audio(cd.audio_url);
+                    const audioUrl = safeLocalUrl(cd.audio_url, SAFE_MEDIA_URL_PREFIXES);
+                    if (!audioUrl) continue;
+                    const testAudio = new Audio(audioUrl);
                     testAudio.onended = () => {
                         hideNowPlayingToast();
                         setTestStatus('✓ Done — ' + s.name);
@@ -5978,7 +6545,7 @@ async function fetchAndUpdateAll() {
             const played = getPlayedToday();
             const remaining = d.species.filter(s => !played.includes(s.name));
             if (!remaining.length) {
-                setStatus(`<span style="color:#6b7280;">&#10003; All ${played.length} species played today</span>`);
+                setStatus(statusLine('#6b7280', `✓ All ${played.length} species played today`));
                 return;
             }
             const next = remaining[0];
@@ -5987,15 +6554,19 @@ async function fetchAndUpdateAll() {
             if (!cd.ok || !cd.audio_url) {
                 // No clip on disk — mark anyway so we don't loop on it
                 markPlayed(next.name);
-                setStatus(`<span style="color:#f59e0b;">&#9888; No clip for ${next.name}</span>`);
+                setStatus(statusLine('#f59e0b', '⚠ No clip for ', safeText(next.name, 'Unknown species')));
                 return;
             }
             if (!bgAudio) bgAudio = new Audio();
-            bgAudio.src = cd.audio_url;
+            if (!setSafeMediaSrc(bgAudio, cd.audio_url)) {
+                markPlayed(next.name);
+                setStatus(statusLine('#f59e0b', '⚠ Clip path rejected for ', safeText(next.name, 'Unknown species')));
+                return;
+            }
             bgAudio.load();
             isPlaying = true;
             showNowPlayingToast(next.name);
-            setStatus(`<span style="color:#10b981;">&#9654; Playing: <strong>${next.name}</strong> &nbsp;<span style="color:#6b7280;">(${played.length + 1}/${played.length + remaining.length} today)</span></span>`);
+            setStatus(statusLine('#10b981', '▶ Playing: ', strongStatus(safeText(next.name, 'Unknown species')), '  ', statusLine('#6b7280', `(${played.length + 1}/${played.length + remaining.length} today)`)));
             await bgAudio.play();
             markPlayed(next.name);
             bgAudio.onended = () => {
@@ -6004,9 +6575,9 @@ async function fetchAndUpdateAll() {
                 const nowPlayed = getPlayedToday();
                 const stillLeft = d.species.filter(s => !nowPlayed.includes(s.name)).length;
                 if (stillLeft > 0) {
-                    setStatus(`<span style="color:#6b7280;">Last: <strong>${next.name}</strong> &nbsp;&mdash;&nbsp; ${stillLeft} species queued</span>`);
+                    setStatus(statusLine('#6b7280', 'Last: ', strongStatus(safeText(next.name, 'Unknown species')), ` — ${stillLeft} species queued`));
                 } else {
-                    setStatus(`<span style="color:#6b7280;">&#10003; All ${nowPlayed.length} species played today</span>`);
+                    setStatus(statusLine('#6b7280', `✓ All ${nowPlayed.length} species played today`));
                 }
             };
         } catch (e) {
@@ -6015,8 +6586,8 @@ async function fetchAndUpdateAll() {
             console.error('[AutoPlay]', e);
             const knownMediaErr = ['NotSupportedError', 'NotAllowedError', 'AbortError'].includes(e.name);
             setStatus(knownMediaErr
-                ? `<span style="color:#6b7280;">No new recordings to play</span>`
-                : `<span style="color:#ef4444;">Error: ${e.message}</span>`);
+                ? statusLine('#6b7280', 'No new recordings to play')
+                : statusLine('#ef4444', 'Error: ', safeText(e.message, 'Unknown error')));
         }
     }
 
@@ -6026,7 +6597,7 @@ async function fetchAndUpdateAll() {
             toggle.checked = isEnabled();
             toggle.addEventListener('change', function () {
                 localStorage.setItem(AUTOPLAY_KEY, toggle.checked ? 'true' : 'false');
-                if (!toggle.checked) setStatus('');
+                if (!toggle.checked) setStatus();
             });
         }
         const testBtn = document.getElementById('autoplay-test-btn');
@@ -6044,9 +6615,9 @@ async function fetchAndUpdateAll() {
         return localStorage.getItem(HOURLY_CHIRP_KEY) === 'true';
     }
 
-    function setChirpStatus(html) {
+    function setChirpStatus(...nodes) {
         const el = document.getElementById('hourly-chirp-status');
-        if (el) el.innerHTML = html;
+        if (el) clearAndAppend(el, ...nodes);
     }
 
     let chirpClockInterval = null;
@@ -6059,10 +6630,10 @@ async function fetchAndUpdateAll() {
         const confEl  = document.getElementById('chirp-bird-conf');
         if (!overlay) return;
 
-        if (bg)    bg.style.backgroundImage    = imageUrl ? `url('${imageUrl}')` : 'none';
-        if (thumb) thumb.style.backgroundImage = imageUrl ? `url('${imageUrl}')` : 'none';
-        if (nameEl) nameEl.textContent = species;
-        if (confEl) confEl.textContent = confidence + '% confidence';
+        if (bg) setSafeBackgroundImage(bg, imageUrl || '');
+        if (thumb) setSafeBackgroundImage(thumb, imageUrl || '');
+        if (nameEl) setText(nameEl, species, 'Unknown species');
+        if (confEl) confEl.textContent = `${Number(confidence) || 0}% confidence`;
 
         function tick() {
             const n    = new Date();
@@ -6092,31 +6663,36 @@ async function fetchAndUpdateAll() {
         try {
             const r = await fetch('/api/best_clip_today');
             if (!r.ok && r.headers.get('content-type')?.includes('text/html')) {
-                setChirpStatus(`<span style="color:#ef4444;">Server unavailable (HTTP ${r.status})</span>`);
+                setChirpStatus(statusLine('#ef4444', `Server unavailable (HTTP ${r.status})`));
                 return;
             }
             const d = await r.json();
             if (!d.ok || !d.audio_url) {
-                setChirpStatus(`<span style="color:#f59e0b;">&#9888; No clip available yet today</span>`);
+                setChirpStatus(statusLine('#f59e0b', '⚠ No clip available yet today'));
                 return;
             }
             showChirpClock(d.species, d.image_url || null, d.confidence);
-            setChirpStatus(`<span style="color:#10b981;">&#9654; ${d.species} &nbsp;<span style="color:#6b7280;">(${d.confidence}%)</span></span>`);
-            const chirpAudio = new Audio(d.audio_url);
+            setChirpStatus(statusLine('#10b981', '▶ ', safeText(d.species, 'Unknown species'), '  ', statusLine('#6b7280', `(${Number(d.confidence) || 0}%)`)));
+            const chirpAudioUrl = safeLocalUrl(d.audio_url, SAFE_MEDIA_URL_PREFIXES);
+            if (!chirpAudioUrl) {
+                setChirpStatus(statusLine('#f59e0b', '⚠ Clip path rejected'));
+                return;
+            }
+            const chirpAudio = new Audio(chirpAudioUrl);
             chirpAudio.onended = () => {
                 hideChirpClock();
                 const t = new Date();
                 const hhmm = String(t.getHours()).padStart(2,'0') + ':' + String(t.getMinutes()).padStart(2,'0');
-                setChirpStatus(`<span style="color:#6b7280;">Last chirp ${hhmm}: <strong>${d.species}</strong> (${d.confidence}%)</span>`);
+                setChirpStatus(statusLine('#6b7280', `Last chirp ${hhmm}: `, strongStatus(safeText(d.species, 'Unknown species')), ` (${Number(d.confidence) || 0}%)`));
             };
             chirpAudio.onerror = () => {
                 hideChirpClock();
-                setChirpStatus(`<span style="color:#ef4444;">Audio error</span>`);
+                setChirpStatus(statusLine('#ef4444', 'Audio error'));
             };
             await chirpAudio.play();
         } catch (e) {
             hideChirpClock();
-            setChirpStatus(`<span style="color:#ef4444;">Error: ${e.message}</span>`);
+            setChirpStatus(statusLine('#ef4444', 'Error: ', safeText(e.message, 'Unknown error')));
             console.error('[HourlyChirp]', e);
         }
     }
@@ -6144,9 +6720,9 @@ async function fetchAndUpdateAll() {
             const r = await fetch('/api/best_clip_today');
             const d = await r.json();
             if (d.ok) {
-                setChirpStatus(`<span style="color:#6b7280;">Next chirp: <strong>${d.species}</strong> &nbsp;(${d.confidence}% confidence)</span>`);
+                setChirpStatus(statusLine('#6b7280', 'Next chirp: ', strongStatus(safeText(d.species, 'Unknown species')), ` (${Number(d.confidence) || 0}% confidence)`));
             } else {
-                setChirpStatus(`<span style="color:#6b7280;">No detections recorded yet today</span>`);
+                setChirpStatus(statusLine('#6b7280', 'No detections recorded yet today'));
             }
         } catch (_) { /* network not ready — fail silently */ }
     }
@@ -6161,7 +6737,7 @@ async function fetchAndUpdateAll() {
                 if (chirpToggle.checked) {
                     updateChirpPreview();
                 } else {
-                    setChirpStatus('');
+                    setChirpStatus();
                 }
             });
             if (isHourlyChirpEnabled()) updateChirpPreview();
