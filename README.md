@@ -57,19 +57,25 @@ QR access overlay:
 
 Front:
 
-![System Front](images/system%20front.png)
+<img width="2000" height="780" alt="shared image" src="https://github.com/user-attachments/assets/af96daca-326e-42e2-a59f-4811dfd5c99d" />
 
-Side:
+<img width="2295" height="3060" alt="Media (1)" src="https://github.com/user-attachments/assets/e2361aed-9a21-4425-94ca-cd6640fcd62f" />
 
-![System Side](images/system%20side.png)
+<img width="780" height="2000" alt="shared image (1)" src="https://github.com/user-attachments/assets/bcf55de3-d82e-4bc0-a8a9-f214fd758eb0" />
+
+
 
 Internals:
 
-![System Internals](images/system%20internals.png)
+<img width="780" height="2000" alt="Media (3)" src="https://github.com/user-attachments/assets/b72f4763-555a-499e-b1ef-0b9a76070f56" />
+
+<img width="780" height="2000" alt="Media (2)" src="https://github.com/user-attachments/assets/8e928187-2d3e-4547-b824-db9469d6bb60" />
+
+
 
 ## Features
 
-- Designed for a Raspberry Pi with an attached 800x480 class touchscreen.
+- Designed for a Raspberry Pi and any web based touch screen tablet
 - Integrates with a local BirdNET-Pi/BirdNET-Go installation and SQLite detection database.
 - Shows recent detections with confidence, species photos, timing, and folder/photo status.
 - Provides all-birds and all-time views for reviewing detected species.
