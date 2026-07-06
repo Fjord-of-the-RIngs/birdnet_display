@@ -12,6 +12,10 @@ https://github.com/C4KEW4LK/birdnet_display
 
 That original project provided the foundation for a Raspberry Pi based BirdNET display with a Flask backend, cached bird images, and a browser-based interface. This repo is my continued build of that display, with changes made over roughly eight months of day-to-day use on my own BirdNET setup.
 
+The main backend of this project remains Birdnet-Pi 
+
+found and maintained at: https://github.com/Nachtzuster/BirdNET-Pi
+
 ## What This Version Adds
 
 - Expanded touchscreen interface in `static/index.html`, with multiple display layouts, dark mode, settings panels, all-birds views, all-time views, and search/sort controls.
