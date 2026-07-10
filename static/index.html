@@ -3186,9 +3186,15 @@ if (systemControlsModal) {
                 const refreshPhotosBtn = document.getElementById("bird-menu-refresh-photos");
                 const photoStatusEl    = document.getElementById("bird-menu-photo-status");
                 const photoGridEl      = document.getElementById("bird-menu-photo-grid");
+                const imageManagementSection = document.getElementById("bird-menu-image-management");
 
                 if (!overlay || !titleEl || !summaryEl) {
                     return;
+                }
+
+                const canManageImages = adminSessionAuthenticated;
+                if (imageManagementSection) {
+                    imageManagementSection.classList.toggle("hidden", !canManageImages);
                 }
 
                 if (refreshPhotosBtn) {
@@ -3325,7 +3331,7 @@ if (systemControlsModal) {
                 if (bird?.name) loadClipForMenu(bird.name, false);
                 if (bird?.name) loadBestClipForMenu(bird.name, false);
                 if (bird?.name) loadSpeciesStats(bird.name);
-                if (window.loadBirdMenuPhotoBrowser) window.loadBirdMenuPhotoBrowser();
+                if (canManageImages && window.loadBirdMenuPhotoBrowser) window.loadBirdMenuPhotoBrowser();
             }
 
 
@@ -3670,6 +3676,7 @@ async function loadFanStateFromServer() {
             const SAFE_IMAGE_URL_PREFIXES = [
                 '/bird-image-cache/',
                 '/static/bird_images_cache/',
+                '/static/bird_images_display_cache/',
                 '/static/thumbnail_cache/'
             ];
             const SAFE_MEDIA_URL_PREFIXES = ['/clip/'];
@@ -4339,6 +4346,7 @@ const cardImageState = [
     { lastKey: null, imageUrl: null },
 ];
 window.loadBirdMenuPhotoBrowser = async function () {
+    if (!adminSessionAuthenticated) return;
     console.log("[photoBrowser] Refresh clicked");
 
     const grid = document.getElementById("bird-menu-photo-grid");
@@ -4394,6 +4402,15 @@ window.loadBirdMenuPhotoBrowser = async function () {
             name.className = "bird-menu-photo-name";
             name.textContent = img.name;
 
+            const attribution = document.createElement("div");
+            attribution.className = "bird-menu-photo-name";
+            attribution.textContent = img.attribution || "";
+            if (img.attribution) {
+                attribution.title = img.license ? ("License: " + img.license) : "";
+            } else {
+                attribution.style.display = "none";
+            }
+
             const delBtn = document.createElement("button");
             delBtn.className = "bird-menu-secondary-btn";
             delBtn.textContent = "Delete";
@@ -4426,6 +4443,7 @@ window.loadBirdMenuPhotoBrowser = async function () {
             };
 
             footer.appendChild(name);
+            footer.appendChild(attribution);
             footer.appendChild(delBtn);
 
             card.appendChild(thumb);
@@ -4447,6 +4465,11 @@ function makeBirdKey(bird) {
     const tRaw = bird.time_raw || "";
     const t = bird.time || "";
     return `${name}__${tRaw || t}`;
+}
+
+function fallbackImageForCard(index) {
+    if (!Array.isArray(PLACEHOLDER_IMAGES) || PLACEHOLDER_IMAGES.length === 0) return "";
+    return PLACEHOLDER_IMAGES[index % PLACEHOLDER_IMAGES.length] || "";
 }
 
 
@@ -4556,11 +4579,14 @@ if (!bird) {
                     }
                 }
 
-                // Default copyright label (may get overridden by special states)
+                // A missing species photo should be friendly, not expose cache details.
                 if (copyrightElem) {
                     if (bird.copyright) {
                         copyrightElem.style.display = "block";
                         copyrightElem.textContent = bird.copyright;
+                    } else if (bird.has_images === false || !bird.image_url) {
+                        copyrightElem.style.display = "block";
+                        copyrightElem.textContent = "Photo coming soon";
                     } else {
                         copyrightElem.style.display = "none";
                         copyrightElem.textContent = "";
@@ -4569,12 +4595,13 @@ if (!bird) {
 
                 // Decide which image URL to use, with per-card persistence.
                 // We only "change" the image when the bird instance changes.
-                let imageUrlToUse = bird.image_url || "";
+                let imageUrlToUse = bird.image_url || fallbackImageForCard(cardIndex);
 
                 const birdKey = makeBirdKey(bird);
                 const state = cardImageState[cardIndex];
 
-                if (birdKey && state.lastKey === birdKey && state.imageUrl) {
+                const usesFallback = bird.has_images === false || !bird.image_url;
+                if (birdKey && state.lastKey === birdKey && state.imageUrl && !(state.isFallback && !usesFallback)) {
                     // Same bird instance still on this card: keep the previous image
                     imageUrlToUse = state.imageUrl;
                 } else {
@@ -4583,12 +4610,14 @@ if (!bird) {
                         cardImageState[cardIndex] = {
                             lastKey: birdKey,
                             imageUrl: imageUrlToUse,
+                            isFallback: usesFallback,
                         };
                     } else {
                         // No image URL from backend; still track the key
                         cardImageState[cardIndex] = {
                             lastKey: birdKey,
                             imageUrl: "",
+                            isFallback: true,
                         };
                     }
                 }
@@ -4643,57 +4672,6 @@ card.onclick = function (ev) {
 
 
 
-                // ---------- CASE 3: Folder exists but has NO photos yet ----------
-                if (bird.folder_exists === true && bird.has_images === false) {
-                    card.classList.add("no-photos-yet");
-
-                    if (imgElem) {
-                        imgElem.src = "";
-                        imgElem.style.display = "none";
-                    }
-
-                    if (bgElem) {
-                        bgElem.style.backgroundImage = "none";
-                    }
-
-                    if (copyrightElem) {
-                        copyrightElem.style.display = "block";
-                        copyrightElem.textContent = "Tap here to add photos for this species.";
-                    }
-
-                    // We keep name/time/conf as-is, just changing the visual
-                    return;
-                }
-
-                // ---------- CASE 4: No image folder for this species ----------
-                // Backend says folder_exists === false for species with no local image cache
-                if (bird.folder_exists === false) {
-                    card.classList.add("no-image-folder");
-
-                    // Hide the image element
-                    if (imgElem) {
-                        imgElem.src = "";
-                        imgElem.style.display = "none";
-                    }
-
-                    // Clear any background image
-                    if (bgElem) {
-                        bgElem.style.backgroundImage = "none";
-                    }
-
-                    // Use the copyright/footer area to show our "no folder" message
-                    if (copyrightElem) {
-                        const folderPath =
-                            bird.folder_path ||
-                            `configured image cache/${bird.folder_name || ""}`;
-
-                        copyrightElem.style.display = "block";
-                        copyrightElem.textContent =
-                            "No image folder exists for this species.\n" +
-                            "To add photos, create this folder on the Pi:\n" +
-                            folderPath;
-                    }
-                }
             }
 
 
@@ -5267,15 +5245,24 @@ async function fetchAndUpdateAll() {
             const timeText = bird.time_display || '';
             const existing = allBirdsCardMap.get(bird.name);
 
-            if (existing) {
-                // Update live bird reference (for click handler) and text only — image untouched
+                if (existing) {
+                // Update live bird reference, text, and replace a fallback once a photo arrives.
                 existing.bird = bird;
                 const nameEl = existing.card.querySelector('.abc-name');
                 const timeEl = existing.card.querySelector('.abc-time');
                 const confEl = existing.card.querySelector('.abc-conf');
+                const bgEl = existing.card.querySelector('.abc-bg, .abc-no-image');
                 if (nameEl) nameEl.textContent = bird.name || '';
                 if (timeEl) timeEl.textContent = timeText;
                 if (confEl) confEl.textContent = conf;
+                if (bgEl) {
+                    if (bird?.image_url && setSafeBackgroundImage(bgEl, bird.image_url)) {
+                        bgEl.className = 'abc-bg';
+                    } else {
+                        bgEl.className = 'abc-no-image';
+                        bgEl.style.backgroundImage = 'none';
+                    }
+                }
             } else {
                 // First time seeing this species — build the card without parsing live API data as HTML.
                 const card = createAllBirdCard(bird, conf, timeText);
@@ -5555,7 +5542,7 @@ async function fetchAndUpdateAll() {
                     </div>
                 </div>
 
-                <div class="bird-menu-section">
+                <div id="bird-menu-image-management" class="bird-menu-section hidden">
                     <h3 class="bird-menu-section-title">Image Folder</h3>
                     <p id="bird-menu-folder-status"></p>
                     <code id="bird-menu-folder-path" class="bird-menu-folder-path"></code>

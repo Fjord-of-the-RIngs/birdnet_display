@@ -16,6 +16,7 @@ class PathConfig:
     display_home: Path
     static_dir: Path
     image_cache_dir: Path
+    display_image_cache_dir: Path
     birdnet_pi_home: Path
     db_path: Path
     audio_dir: Path
@@ -36,6 +37,9 @@ def load_path_config() -> PathConfig:
         or image_cache_default
     )
     image_cache_dir = _resolve_path(image_cache_override)
+    display_image_cache_dir = _env_path(
+        "BIRDNET_DISPLAY_IMAGE_CACHE_DIR", static_dir / "bird_images_display_cache"
+    )
 
     birdnet_pi_home = _env_path("BIRDNET_PI_HOME", Path.home() / "BirdNET-Pi")
     db_path = _env_path("BIRDNET_DB_PATH", birdnet_pi_home / "scripts" / "birds.db")
@@ -45,6 +49,7 @@ def load_path_config() -> PathConfig:
         display_home=display_home,
         static_dir=static_dir,
         image_cache_dir=image_cache_dir,
+        display_image_cache_dir=display_image_cache_dir,
         birdnet_pi_home=birdnet_pi_home,
         db_path=db_path,
         audio_dir=audio_dir,

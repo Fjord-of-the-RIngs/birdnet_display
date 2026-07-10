@@ -2,11 +2,12 @@
 import requests
 import sqlite3
 from flask import Flask, render_template, send_file, send_from_directory, request, jsonify, session
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 from datetime import datetime
 import os
 import random
 import socket
+import time
 import ipaddress
 import hmac
 import secrets
@@ -27,6 +28,14 @@ from werkzeug.utils import secure_filename
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from functools import wraps
 from PIL import Image, UnidentifiedImageError
+from avicommons import read_species_metadata
+from image_cache_utils import (
+    ALLOWED_IMAGE_EXTENSIONS,
+    ALLOWED_IMAGE_FORMATS,
+    IMAGE_FORMAT_EXTENSIONS,
+    is_allowed_image_filename,
+    validate_cached_image,
+)
 from path_config import PATHS
 
 app = Flask(
@@ -336,21 +345,21 @@ def api_bird_images_list():
         return jsonify({"ok": True, "folder_exists": False, "images": []})
 
     items = []
-    for name in sorted(os.listdir(folder_path)):
+    for name in _valid_cached_image_names(
+        os.path.basename(folder_path), folder_path, context="api_bird_images"
+    ):
         p = os.path.join(folder_path, name)
-        if not os.path.isfile(p):
-            continue
-        ext = os.path.splitext(name)[1].lower()
-        if ext not in ALLOWED_EXTS:
-            continue
-
         st = os.stat(p)
-        url = _bird_image_url(os.path.basename(folder_path), name)
+        metadata = _image_metadata(folder_path, name)
         items.append({
             "name": name,
-            "url": url,
+            "url": _bird_image_url(os.path.basename(folder_path), name),
             "bytes": st.st_size,
             "mtime": int(st.st_mtime),
+            "attribution": _image_attribution(folder_path, name),
+            "source": metadata.get("source", ""),
+            "license": metadata.get("license", ""),
+            "by": metadata.get("by", ""),
         })
 
     return jsonify({"ok": True, "folder_exists": True, "images": items})
@@ -474,19 +483,8 @@ BIRD_IMAGE_BASE = PATHS.image_cache_dir
 SPECTROGRAM_DIR = PATHS.spectrogram_cache_dir
 
 # Only allow these image types for browsing/deleting
-ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-ALLOWED_IMAGE_FORMATS = {
-    "JPEG": {".jpg", ".jpeg"},
-    "PNG": {".png"},
-    "GIF": {".gif"},
-    "WEBP": {".webp"},
-}
-IMAGE_FORMAT_EXTENSIONS = {
-    "JPEG": ".jpg",
-    "PNG": ".png",
-    "GIF": ".gif",
-    "WEBP": ".webp",
-}
+ALLOWED_EXTS = ALLOWED_IMAGE_EXTENSIONS
+_INVALID_CACHED_IMAGE_LOGGED = set()
 
 def _bird_image_base_path() -> Path:
     return BIRD_IMAGE_BASE.resolve()
@@ -525,9 +523,87 @@ def _image_cache_static_prefix() -> str | None:
 
 def _bird_image_url(species_folder: str, filename: str) -> str:
     prefix = _image_cache_static_prefix()
+    safe_folder = quote(species_folder, safe="")
+    safe_filename = quote(filename, safe="")
     if prefix:
-        return f"{prefix}/{species_folder}/{filename}"
-    return f"/bird-image-cache/{species_folder}/{filename}"
+        return f"{prefix}/{safe_folder}/{safe_filename}"
+    return f"/bird-image-cache/{safe_folder}/{safe_filename}"
+
+
+def _display_image_url(output_relative: str) -> str:
+    relative = Path(output_relative)
+    if len(relative.parts) < 2:
+        return ""
+    return f"/bird-image-cache/{quote(relative.parts[0], safe='')}/{quote(relative.name, safe='')}"
+
+
+def _image_metadata(folder_path: str | Path, filename: str) -> dict:
+    metadata = read_species_metadata(folder_path).get(filename, {})
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _image_attribution(folder_path: str | Path, filename: str) -> str:
+    copyright_file = os.path.splitext(filename)[0] + ".txt"
+    copyright_path = Path(folder_path) / copyright_file
+    if copyright_path.is_file():
+        with copyright_path.open("r", encoding="utf-8", errors="ignore") as fh:
+            text = fh.read().strip()
+        if text:
+            return text
+    metadata = _image_metadata(folder_path, filename)
+    return str(metadata.get("attribution") or "")
+
+
+def _log_invalid_cached_image(
+    context: str,
+    *,
+    species_name: str,
+    species_folder: str,
+    image_path: str | Path,
+    url: str,
+    reason: str,
+) -> None:
+    key = (context, str(image_path), reason)
+    if key in _INVALID_CACHED_IMAGE_LOGGED:
+        return
+    _INVALID_CACHED_IMAGE_LOGGED.add(key)
+    print(
+        "[IMAGE_CACHE] Skipping invalid cached image "
+        f"context={context} species={species_name!r} "
+        f"folder={species_folder!r} path={image_path} url={url!r} "
+        f"reason={reason}"
+    )
+
+
+def _valid_cached_image_names(
+    species_folder: str,
+    folder_path: str | Path,
+    *,
+    species_name: str = "",
+    context: str = "image_cache",
+) -> list[str]:
+    if not os.path.isdir(folder_path):
+        return []
+
+    valid_names = []
+    for name in sorted(os.listdir(folder_path)):
+        if not is_allowed_image_filename(name):
+            continue
+        image_path = Path(folder_path) / name
+        url = _bird_image_url(species_folder, name)
+        validation = validate_cached_image(image_path, BIRD_IMAGE_BASE)
+        if validation.ok:
+            valid_names.append(name)
+            continue
+        _log_invalid_cached_image(
+            context,
+            species_name=species_name,
+            species_folder=species_folder,
+            image_path=image_path,
+            url=url,
+            reason=validation.reason,
+        )
+    return valid_names
 
 
 def safe_join_under_base(base_dir: Path, filename: str) -> Path:
@@ -631,7 +707,35 @@ def generate_safe_image_filename(image_format: str, target_dir: Path) -> str:
 @app.route("/bird-image-cache/<species_folder>/<filename>")
 def serve_bird_image_cache(species_folder, filename):
     folder_path = _safe_species_folder(species_folder)
+
+    # Optimized display copies share this existing allowlisted URL route. Allow
+    # legacy generated names with punctuation only when they resolve to an
+    # existing file inside the dedicated optimized cache.
+    display_base = DISPLAY_IMAGE_CACHE_BASE.resolve()
+    display_path = (display_base / species_folder / filename).resolve()
+    if (
+        Path(filename).name == filename
+        and display_base in display_path.parents
+        and display_path.is_file()
+        and display_path.suffix.lower() == ".webp"
+    ):
+        validation = validate_cached_image(display_path, display_base)
+        if validation.ok:
+            return send_file(display_path)
+
     safe_file = _safe_image_filename(filename)
+    image_path = Path(folder_path) / safe_file
+    validation = validate_cached_image(image_path, BIRD_IMAGE_BASE)
+    if not validation.ok:
+        _log_invalid_cached_image(
+            "serve_bird_image_cache",
+            species_name="",
+            species_folder=species_folder,
+            image_path=image_path,
+            url=_bird_image_url(species_folder, safe_file),
+            reason=validation.reason,
+        )
+        abort(404, description="Image not found")
     return send_from_directory(folder_path, safe_file)
 
 # ----------------------------------------------------------------------
@@ -725,6 +829,8 @@ SPECIES_ALIASES = {
 
 BIRD_IMAGE_CACHE_BASE = PATHS.image_cache_dir
 BIRD_IMAGE_CACHE_BASE.mkdir(parents=True, exist_ok=True)
+DISPLAY_IMAGE_CACHE_BASE = PATHS.display_image_cache_dir
+DISPLAY_IMAGE_MANIFEST = DISPLAY_IMAGE_CACHE_BASE / "manifest.json"
 SPECTROGRAM_DIR.mkdir(parents=True, exist_ok=True)
 
 # Snapshot of all existing species folders
@@ -733,6 +839,76 @@ EXISTING_BIRD_IMAGE_FOLDERS = {
     for name in os.listdir(BIRD_IMAGE_CACHE_BASE)
     if os.path.isdir(BIRD_IMAGE_CACHE_BASE / name)
 }
+_NORMALIZED_BIRD_IMAGE_FOLDERS: dict[str, str] = {}
+_IMAGE_FOLDER_REFRESH_INTERVAL_SECONDS = 2.0
+_last_image_folder_refresh = 0.0
+_DISPLAY_IMAGE_MANIFEST_REFRESH_INTERVAL_SECONDS = 2.0
+_last_display_image_manifest_refresh = 0.0
+_display_images_by_folder: dict[str, list[dict[str, str]]] = {}
+
+
+def refresh_display_image_manifest(*, force: bool = False) -> dict[str, list[dict[str, str]]]:
+    """Load the optimized-image index without opening original image files."""
+    global _last_display_image_manifest_refresh, _display_images_by_folder
+    now = time.monotonic()
+    if not force and now - _last_display_image_manifest_refresh < _DISPLAY_IMAGE_MANIFEST_REFRESH_INTERVAL_SECONDS:
+        return _display_images_by_folder
+
+    try:
+        with DISPLAY_IMAGE_MANIFEST.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        entries = data.get("entries", {}) if isinstance(data, dict) else {}
+    except (OSError, ValueError, json.JSONDecodeError):
+        entries = {}
+
+    by_folder: dict[str, list[dict[str, str]]] = {}
+    if isinstance(entries, dict):
+        for source_relative, item in entries.items():
+            if not isinstance(source_relative, str) or not isinstance(item, dict):
+                continue
+            output_relative = item.get("output")
+            source_path = Path(source_relative)
+            if not isinstance(output_relative, str) or len(source_path.parts) < 2:
+                continue
+            output_path = DISPLAY_IMAGE_CACHE_BASE / output_relative
+            if not output_path.is_file():
+                continue
+            folder = source_path.parts[0]
+            by_folder.setdefault(folder, []).append(
+                {"source_name": source_path.name, "output": output_relative}
+            )
+
+    for images in by_folder.values():
+        images.sort(key=lambda item: item["source_name"])
+    _display_images_by_folder = by_folder
+    _last_display_image_manifest_refresh = now
+    return _display_images_by_folder
+
+
+def _display_images_for_folder(folder_name: str) -> list[dict[str, str]]:
+    return refresh_display_image_manifest().get(folder_name, [])
+
+
+def refresh_bird_image_folders(*, force: bool = False) -> set[str]:
+    """Keep the folder lookup current when imports add images after startup."""
+    global _last_image_folder_refresh, _NORMALIZED_BIRD_IMAGE_FOLDERS
+    now = time.monotonic()
+    if not force and now - _last_image_folder_refresh < _IMAGE_FOLDER_REFRESH_INTERVAL_SECONDS:
+        return set(EXISTING_BIRD_IMAGE_FOLDERS)
+
+    if not BIRD_IMAGE_CACHE_BASE.is_dir():
+        folders: set[str] = set()
+    else:
+        folders = {path.name for path in BIRD_IMAGE_CACHE_BASE.iterdir() if path.is_dir()}
+
+    EXISTING_BIRD_IMAGE_FOLDERS.clear()
+    EXISTING_BIRD_IMAGE_FOLDERS.update(folders)
+    _NORMALIZED_BIRD_IMAGE_FOLDERS = {
+        _normalize_species_folder_name(folder): folder for folder in folders
+    }
+    _known_species_dirs.cache_clear()
+    _last_image_folder_refresh = now
+    return folders
 
 
 def canonical_folder_name(common_name: str) -> str:
@@ -761,6 +937,11 @@ def canonical_folder_name(common_name: str) -> str:
     return name
 
 
+def _normalize_species_folder_name(value: str) -> str:
+    value = value.strip().lower().replace("'", "").replace(".", "")
+    return value.replace("_", "").replace(" ", "").replace("-", "")
+
+
 def get_bird_folder_name(common_name: str) -> tuple[str, bool]:
     """
     Decide which folder name to use for this bird.
@@ -770,21 +951,13 @@ def get_bird_folder_name(common_name: str) -> tuple[str, bool]:
     - Ignore apostrophes/periods
     - Case-insensitive
     """
+    refresh_bird_image_folders()
     canonical = canonical_folder_name(common_name)
 
-    def norm(s: str) -> str:
-        s = s.strip().lower()
-        s = s.replace("'", "").replace(".", "")
-        # treat separators as equivalent by removing them
-        s = s.replace("_", "").replace(" ", "").replace("-", "")
-        return s
-
-    want = norm(canonical)
-
-    # Build a lookup from normalized -> real folder name
-    for existing in EXISTING_BIRD_IMAGE_FOLDERS:
-        if norm(existing) == want:
-            return existing, True
+    want = _normalize_species_folder_name(canonical)
+    existing = _NORMALIZED_BIRD_IMAGE_FOLDERS.get(want)
+    if existing:
+        return existing, True
 
     # Not found: this is what we'd create
     return canonical, False
@@ -792,9 +965,7 @@ def get_bird_folder_name(common_name: str) -> tuple[str, bool]:
 def get_cached_image(species_name: str):
     if not species_name:
         return None
-    if not CACHE_DIRECTORY or not os.path.isdir(CACHE_DIRECTORY):
-        return None
-
+    refresh_bird_image_folders()
     base = species_name.strip()
 
     if base in SPECIES_ALIASES:
@@ -806,49 +977,75 @@ def get_cached_image(species_name: str):
         candidates.append(stripped)
 
         # Use the live in-memory set of known folders, which is updated whenever
-    # new folders are created or images are uploaded.
-    known_dirs = set(EXISTING_BIRD_IMAGE_FOLDERS)
     species_folder = None
+    images: list[dict[str, str]] = []
 
     for cand in candidates:
-        slug = _slug_for_cache_name(cand)
-        if slug in known_dirs:
-            species_folder = slug
+        candidate_folder, folder_exists = get_bird_folder_name(cand)
+        candidate_images = _display_images_for_folder(candidate_folder) if folder_exists else []
+        if candidate_images:
+            species_folder = candidate_folder
+            images = candidate_images
             break
 
-    # Fallback: generic "Common_Name" folder if it exists
-    if species_folder is None and "Common_Name" in known_dirs:
+    # Fallback: generic "Common_Name" folder if it has optimized display copies.
+    if species_folder is None:
+        generic_images = _display_images_for_folder("Common_Name")
+        if generic_images:
+            images = generic_images
         species_folder = "Common_Name"
 
-
-    if species_folder is None:
-        return None
-
-    species_dir = os.path.join(CACHE_DIRECTORY, species_folder)
-    # Allow multiple common image formats
-    images = [
-        f for f in os.listdir(species_dir)
-        if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif"))
-    ]
     if not images:
         return None
 
-    # Pick a random image each time this function is called
+    # Pick a random optimized image each time this function is called.
     chosen_image = random.choice(images)
-
-    copyright_file = os.path.splitext(chosen_image)[0] + ".txt"
-    copyright_path = os.path.join(species_dir, copyright_file)
-    copyright_text = ""
-    if os.path.isfile(copyright_path):
-        with open(
-            copyright_path, "r", encoding="utf-8", errors="ignore"
-        ) as fh:
-            copyright_text = fh.read().strip()
+    source_name = chosen_image["source_name"]
+    image_url = _display_image_url(chosen_image["output"])
+    if not image_url:
+        return None
 
     return {
-        "image_url": _bird_image_url(species_folder, chosen_image),
-        "copyright": copyright_text,
+        "image_url": image_url,
+        "copyright": _image_attribution(BIRD_IMAGE_CACHE_BASE / species_folder, source_name),
     }
+
+
+def has_cached_display_image(species_name: str) -> bool:
+    """Whether a species has a ready-to-serve optimized display photo."""
+    if not species_name:
+        return False
+    base = species_name.strip()
+    if base in SPECIES_ALIASES:
+        base = SPECIES_ALIASES[base]
+    candidates = [base]
+    stripped = _strip_qualifiers(base)
+    if stripped and stripped not in candidates:
+        candidates.append(stripped)
+    for candidate in candidates:
+        folder_name, folder_exists = get_bird_folder_name(candidate)
+        if folder_exists and _display_images_for_folder(folder_name):
+            return True
+    return bool(_display_images_for_folder("Common_Name"))
+
+
+def get_fallback_image() -> dict | None:
+    """Return a local, attribution-free image for a species without a photo."""
+    images = _display_images_for_folder("placeholders")
+    if images:
+        image_url = _display_image_url(images[0]["output"])
+        return {"image_url": image_url, "copyright": ""} if image_url else None
+    if not PLACEHOLDER_DIRECTORY or not PLACEHOLDER_DIRECTORY.is_dir():
+        return None
+    images = _valid_cached_image_names("placeholders", PLACEHOLDER_DIRECTORY, context="species_photo_fallback")
+    if not images:
+        return None
+    return {"image_url": _bird_image_url("placeholders", sorted(images)[0]), "copyright": ""}
+
+
+def get_display_image(species_name: str) -> dict | None:
+    """Prefer a species photo and otherwise provide the friendly local fallback."""
+    return get_cached_image(species_name) or get_fallback_image()
 
 
 # ----------------------------------------------------------------------
@@ -864,11 +1061,12 @@ def get_offline_fallback_data():
 
     # --- 1) Preferred: custom placeholder images ---
     if PLACEHOLDER_DIRECTORY and os.path.isdir(PLACEHOLDER_DIRECTORY):
-        image_files = [
-            f
-            for f in os.listdir(PLACEHOLDER_DIRECTORY)
-            if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif", ".webp"))
-        ]
+        image_files = _valid_cached_image_names(
+            "placeholders",
+            PLACEHOLDER_DIRECTORY,
+            species_name="",
+            context="offline_placeholders",
+        )
         image_files.sort()
 
         if image_files:
@@ -979,7 +1177,7 @@ def get_bird_data_from_local_db():
             except Exception:
                 confidence_value = 0
 
-            cached = get_cached_image(common_name)
+            cached = get_display_image(common_name)
             image_url = cached["image_url"] if cached else ""
             copyright_info = cached["copyright"] if cached else ""
 
@@ -1013,7 +1211,8 @@ def get_detections_last_24h(limit_rows=2000):
             """
             SELECT Com_Name, Date, Time, Confidence
             FROM detections
-            WHERE datetime(Date || ' ' || Time) >= datetime('now', '-1 day')
+            WHERE Date >= date('now', '-1 day')
+              AND datetime(Date || ' ' || Time) >= datetime('now', '-1 day')
             ORDER BY Date DESC, Time DESC
             LIMIT ?
             """,
@@ -1026,6 +1225,7 @@ def get_detections_last_24h(limit_rows=2000):
             return None
 
         detections = []
+        species_image_state: dict[str, tuple[dict | None, str, bool, str, bool]] = {}
         for common_name, date_str, time_str, conf in rows:
             if not common_name:
                 continue
@@ -1035,25 +1235,19 @@ def get_detections_last_24h(limit_rows=2000):
             except Exception:
                 conf_val = 0
 
-            # Existing image cache lookup (may still provide a fallback image)
-            cached = get_cached_image(common_name)
+            state = species_image_state.get(common_name)
+            if state is None:
+                # Resolve each species once per request; a 2,000-row detection
+                # window often contains many repeated detections of the same bird.
+                cached = get_display_image(common_name)
+                folder_name, folder_exists = get_bird_folder_name(common_name)
+                has_images = has_cached_display_image(common_name)
+                state = (cached, folder_name, folder_exists, str(BIRD_IMAGE_CACHE_BASE / folder_name), has_images)
+                species_image_state[common_name] = state
+
+            cached, folder_name, folder_exists, folder_path, has_images = state
             img_url = cached["image_url"] if cached else ""
             copyright_info = cached["copyright"] if cached else ""
-
-            # Figure out the correct folder name + whether it exists
-            folder_name, folder_exists = get_bird_folder_name(common_name)
-            folder_path = str(BIRD_IMAGE_CACHE_BASE / folder_name)
-
-            # Does this folder actually contain any image files?
-            has_images = False
-            if folder_exists:
-                try:
-                    for fname in os.listdir(folder_path):
-                        if fname.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif")):
-                            has_images = True
-                            break
-                except Exception as e:
-                    print(f"Error checking image folder for {common_name}: {e}")
 
             detections.append(
                 {
@@ -1095,7 +1289,8 @@ def get_unique_species_last_24h():
                 MAX(Confidence) AS Confidence,
                 COUNT(*) AS detection_count
             FROM detections
-            WHERE datetime(Date || ' ' || Time) >= datetime('now', '-1 day')
+            WHERE Date >= date('now', '-1 day')
+              AND datetime(Date || ' ' || Time) >= datetime('now', '-1 day')
             GROUP BY Com_Name
             ORDER BY last_seen DESC;
         """
@@ -1108,8 +1303,8 @@ def get_unique_species_last_24h():
             if not name:
                 continue
 
-            # Cached image (if available)
-            cached = get_cached_image(name)
+            # Prefer a species image, then use a friendly local fallback.
+            cached = get_display_image(name)
             img_url = cached["image_url"] if cached else ""
             copyright_info = cached["copyright"] if cached else ""
 
@@ -1117,16 +1312,8 @@ def get_unique_species_last_24h():
             folder_name, folder_exists = get_bird_folder_name(name)
             folder_path = str(BIRD_IMAGE_CACHE_BASE / folder_name)
 
-            # Check whether folder contains any images
-            has_images = False
-            if folder_exists:
-                try:
-                    for fname in os.listdir(folder_path):
-                        if fname.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif")):
-                            has_images = True
-                            break
-                except Exception as e:
-                    print(f"Error checking image folder for {name}: {e}")
+            # Only ready-to-serve optimized copies count as display photos.
+            has_images = has_cached_display_image(name)
 
             try:
                 conf_val = int(float(conf) * 100) if conf is not None else 0
@@ -1186,22 +1373,14 @@ def get_all_species_ever():
             if not name:
                 continue
 
-            cached = get_cached_image(name)
+            cached = get_display_image(name)
             img_url = cached["image_url"] if cached else ""
             copyright_info = cached["copyright"] if cached else ""
 
             folder_name, folder_exists = get_bird_folder_name(name)
             folder_path = str(BIRD_IMAGE_CACHE_BASE / folder_name)
 
-            has_images = False
-            if folder_exists:
-                try:
-                    for fname in os.listdir(folder_path):
-                        if fname.lower().endswith((".jpg", ".jpeg", ".png", ".webp", ".gif")):
-                            has_images = True
-                            break
-                except Exception:
-                    pass
+            has_images = has_cached_display_image(name)
 
             try:
                 conf_val = int(float(conf) * 100) if conf is not None else 0
@@ -2183,7 +2362,7 @@ def api_best_clip_today():
                 if audio_path:
                     conn2.close()
                     _chirp_cooldown[com_name] = now_ts + _CHIRP_COOLDOWN_SECS
-                    cached = get_cached_image(com_name)
+                    cached = get_display_image(com_name)
                     species_folder = com_name.replace("'", "").replace(" ", "_")
                     relpath = f"{row['Date']}/{species_folder}/{row['File_Name']}"
                     return jsonify({

@@ -29,6 +29,8 @@ MANIFEST
 
 # Ignore static bird images cache
 static/bird_images_cache/
+static/bird_images_display_cache/
+avicommons_latest.json
 
 # Local runtime state
 venv/

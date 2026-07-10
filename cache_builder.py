@@ -1,10 +1,12 @@
 import os
 import re
 import csv
+import argparse
 import requests
 from urllib.parse import urljoin, quote_plus
 from PIL import Image
 from bs4 import BeautifulSoup
+from image_cache_utils import ALLOWED_IMAGE_EXTENSIONS, validate_cached_image
 from path_config import PATHS
 
 # --- Constants and Configuration ---
@@ -88,15 +90,48 @@ def download_image_and_attribution(image_info, folder_path, file_name_base):
     file_ext = os.path.splitext(image_info['url'].split('(')[0])[-1] or ".jpg"
     image_file_path = os.path.join(folder_path, f"{file_name_base}{file_ext}")
     attr_file_path = os.path.join(folder_path, f"{file_name_base}.txt")
-    if os.path.exists(image_file_path) and os.path.exists(attr_file_path): return
+    if os.path.exists(image_file_path) and os.path.exists(attr_file_path):
+        validation = validate_cached_image(image_file_path, CACHE_DIRECTORY)
+        if validation.ok:
+            return
+        print(f"Existing cached image is invalid: {image_file_path}. Reason: {validation.reason}")
     try:
         image_response = requests.get(image_info['url'], timeout=15, headers={'User-Agent': HEADERS['User-Agent']})
         image_response.raise_for_status()
         with open(image_file_path, 'wb') as f: f.write(image_response.content)
+        validation = validate_cached_image(image_file_path, CACHE_DIRECTORY)
+        if not validation.ok:
+            try:
+                os.remove(image_file_path)
+            except OSError:
+                pass
+            try:
+                if os.path.exists(attr_file_path):
+                    os.remove(attr_file_path)
+            except OSError:
+                pass
+            print(f"Rejected downloaded image for {file_name_base}. Reason: {validation.reason}")
+            return
         with open(attr_file_path, 'w', encoding='utf-8') as f: f.write(image_info['attribution'])
         print(f"Successfully cached {os.path.basename(image_file_path)}")
     except (requests.exceptions.RequestException, IOError) as e:
         print(f"Failed to download/save for {file_name_base}. Error: {e}")
+
+
+def count_valid_cached_images(folder_path):
+    valid_count = 0
+    if not os.path.isdir(folder_path):
+        return valid_count
+    for filename in os.listdir(folder_path):
+        if os.path.splitext(filename)[1].lower() not in ALLOWED_IMAGE_EXTENSIONS:
+            continue
+        image_path = os.path.join(folder_path, filename)
+        validation = validate_cached_image(image_path, CACHE_DIRECTORY)
+        if validation.ok:
+            valid_count += 1
+        else:
+            print(f"Skipping invalid cached image: {image_path}. Reason: {validation.reason}")
+    return valid_count
 
 # --- Main Cache Building Process ---
 def ensure_cache_is_built():
@@ -111,7 +146,7 @@ def ensure_cache_is_built():
         species_folder_name = "".join(c for c in common_name if c.isalnum() or c in ' _').rstrip().replace(' ', '_')
         species_folder_path = os.path.join(CACHE_DIRECTORY, species_folder_name)
         if os.path.isdir(species_folder_path):
-            images_found = len([f for f in os.listdir(species_folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
+            images_found = count_valid_cached_images(species_folder_path)
             if images_found >= IMAGES_PER_SPECIES:
                 print(f"Cache for '{common_name}' is already complete ({images_found} images). Skipping.")
                 continue
@@ -128,8 +163,12 @@ def resize_cached_images():
     target_height = 600
     for root, _, files in os.walk(CACHE_DIRECTORY):
         for file in files:
-            if file.lower().endswith(('.png', '.jpg', '.jpeg')):
+            if os.path.splitext(file)[1].lower() in ALLOWED_IMAGE_EXTENSIONS:
                 image_path = os.path.join(root, file)
+                validation = validate_cached_image(image_path, CACHE_DIRECTORY)
+                if not validation.ok:
+                    print(f"Could not resize {image_path}. Reason: {validation.reason}")
+                    continue
                 try:
                     with Image.open(image_path) as img:
                         w, h = img.size
@@ -144,8 +183,67 @@ def resize_cached_images():
                     print(f"Could not resize {image_path}. Error: {e}")
     print("--- Image resizing complete. ---")
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Build the BirdNET Display image cache.")
+    parser.add_argument(
+        "--source",
+        choices=("wikimedia", "avicommons"),
+        default="wikimedia",
+        help="Image source to use. Default keeps the existing Wikimedia cache builder.",
+    )
+    parser.add_argument("--dry-run", action="store_true", help="Avicommons only: report downloads without writing files.")
+    parser.add_argument("--size", type=int, default=480, help="Avicommons only: image size.")
+    parser.add_argument("--limit", type=int, default=0, help="Avicommons only: max images to download.")
+    parser.add_argument("--max-per-species", type=int, default=1, help="Avicommons only: max images per species.")
+    parser.add_argument("--json-cache", default="", help="Avicommons only: local JSON cache path.")
+    parser.add_argument("--refresh-json", action="store_true", help="Avicommons only: refresh local JSON cache.")
+    parser.add_argument("--from-db", action="store_true", help="Avicommons only: read species from the BirdNET DB.")
+    parser.add_argument("--from-species-list", action="store_true", help="Avicommons only: read species from species_list.csv.")
+    parser.add_argument("--species", action="append", default=[], help="Avicommons only: limit to one common name. Repeatable.")
+    parser.add_argument("--licenses", default="", help="Avicommons only: comma-separated license allowlist.")
+    return parser.parse_args()
+
+
+def run_avicommons_cache(args):
+    from scripts.cache_avicommons_images import main as avicommons_main
+    import sys
+
+    argv = ["cache_avicommons_images.py"]
+    if args.dry_run:
+        argv.append("--dry-run")
+    if args.refresh_json:
+        argv.append("--refresh-json")
+    if args.from_db:
+        argv.append("--from-db")
+    if args.from_species_list:
+        argv.append("--from-species-list")
+    if args.limit:
+        argv.extend(["--limit", str(args.limit)])
+    if args.max_per_species:
+        argv.extend(["--max-per-species", str(args.max_per_species)])
+    if args.json_cache:
+        argv.extend(["--json-cache", args.json_cache])
+    if args.size:
+        argv.extend(["--size", str(args.size)])
+    if args.licenses:
+        argv.extend(["--licenses", args.licenses])
+    for species in args.species:
+        argv.extend(["--species", species])
+
+    old_argv = sys.argv
+    try:
+        sys.argv = argv
+        return avicommons_main()
+    finally:
+        sys.argv = old_argv
+
+
 # This allows the script to be run directly from the command line
 if __name__ == '__main__':
+    args = parse_args()
+    if args.source == "avicommons":
+        raise SystemExit(run_avicommons_cache(args))
+
     os.makedirs(CACHE_DIRECTORY, exist_ok=True)
     print("--- Starting Offline Image Cache Builder ---")
     ensure_cache_is_built()
