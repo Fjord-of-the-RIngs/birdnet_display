@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.0.2 - 2026-07-10
 
 - Added attributed Avicommons photo caching for detected BirdNET species.
 - Added optimized WebP display assets and safe compatibility routes for responsive photo loading.

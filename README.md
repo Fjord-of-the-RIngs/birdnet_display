@@ -12,7 +12,9 @@ https://github.com/C4KEW4LK/birdnet_display
 
 That original project provided the foundation for a Raspberry Pi based BirdNET display with a Flask backend, cached bird images, and a browser-based interface. This repo is my continued build of that display, with changes made over roughly eight months of day-to-day use on my own BirdNET setup.
 
-The main BirdNET-Pi backend is maintained at https://github.com/Nachtzuster/BirdNET-Pi.
+The main backend of this project remains Birdnet-Pi 
+
+found and maintained at: https://github.com/Nachtzuster/BirdNET-Pi
 
 ## What This Version Adds
 
@@ -21,10 +23,7 @@ The main BirdNET-Pi backend is maintained at https://github.com/Nachtzuster/Bird
 - Detection audio support, including latest clip, best clip, spectrogram serving, per-species playback, first-detection playback, and periodic "chirp" style playback from today's detections.
 - Bird activity views backed by the local BirdNET database, including recent detections, all species detected today, all-time detections, species stats, and bird-day index endpoints.
 - Raspberry Pi hardware controls from the display UI, including screen brightness, reboot, shutdown, fan mode, fan speed, CPU temperature, and hardware fan-state feedback.
-- QR code overlay for quickly opening the display from another device on the network.
 - Offline and waiting-for-detections behavior using cached species images or placeholder photos instead of showing a blank screen.
-- Avicommons photo caching with local attribution, plus optimized WebP display copies for responsive browser and touchscreen loading.
-- Kiosk launcher, installer, access-point setup script, and included 3D-print files for a complete physical display build.
 
 ## Screenshots and Build Photos
 
@@ -62,19 +61,25 @@ QR access overlay:
 
 Front:
 
-![System Front](images/system%20front.png)
+<img width="2000" height="780" alt="shared image" src="https://github.com/user-attachments/assets/af96daca-326e-42e2-a59f-4811dfd5c99d" />
 
-Side:
+<img width="2295" height="3060" alt="Media (1)" src="https://github.com/user-attachments/assets/e2361aed-9a21-4425-94ca-cd6640fcd62f" />
 
-![System Side](images/system%20side.png)
+<img width="780" height="2000" alt="shared image (1)" src="https://github.com/user-attachments/assets/bcf55de3-d82e-4bc0-a8a9-f214fd758eb0" />
+
+
 
 Internals:
 
-![System Internals](images/system%20internals.png)
+<img width="780" height="2000" alt="Media (3)" src="https://github.com/user-attachments/assets/b72f4763-555a-499e-b1ef-0b9a76070f56" />
+
+<img width="780" height="2000" alt="Media (2)" src="https://github.com/user-attachments/assets/8e928187-2d3e-4547-b824-db9469d6bb60" />
+
+
 
 ## Features
 
-- Designed for a Raspberry Pi with an attached 800x480 class touchscreen.
+- Designed for a Raspberry Pi and any web based touch screen tablet
 - Integrates with a local BirdNET-Pi/BirdNET-Go installation and SQLite detection database.
 - Shows recent detections with confidence, species photos, timing, and folder/photo status.
 - Provides all-birds and all-time views for reviewing detected species.
@@ -147,7 +152,6 @@ Filesystem paths are resolved in `path_config.py`. Environment variables take pr
 | `BIRDNET_DISPLAY_STATIC_DIR` | `$BIRDNET_DISPLAY_HOME/static` |
 | `BIRDNET_IMAGE_CACHE_DIR` | `$BIRDNET_DISPLAY_STATIC_DIR/bird_images_cache` |
 | `BIRDNET_IMAGE_DIR` | fallback alias for `BIRDNET_IMAGE_CACHE_DIR` |
-| `BIRDNET_DISPLAY_IMAGE_CACHE_DIR` | `$BIRDNET_DISPLAY_STATIC_DIR/bird_images_display_cache` |
 | `BIRDNET_PI_HOME` | `$HOME/BirdNET-Pi` |
 | `BIRDNET_DB_PATH` | `$BIRDNET_PI_HOME/scripts/birds.db` |
 | `BIRDNET_AUDIO_DIR` | `$HOME/BirdSongs/Extracted/By_Date` |
@@ -217,24 +221,6 @@ source venv/bin/activate
 python cache_builder.py
 ```
 
-### Avicommons and optimized display photos
-
-The Avicommons importer adds attributed photos to the local image cache. It can use the detected species in the BirdNET database and will not overwrite existing photos:
-
-```bash
-cd ~/birdnet_display
-source venv/bin/activate
-python scripts/cache_avicommons_images.py --from-db --max-per-species 1
-```
-
-After adding or uploading photos, build optimized WebP display copies. Originals remain untouched; the display serves these smaller copies to keep browser and touchscreen loading responsive:
-
-```bash
-python scripts/build_display_image_cache.py
-```
-
-Use `--dry-run` to review pending work, or `--force` to rebuild every optimized copy. The Avicommons catalog snapshot and both image caches are local runtime data and are not committed to Git.
-
 ## Optional BirdNET-Go Networking
 
 The main installer does not modify BirdNET-Go, stop BirdNET-Go, rewrite its service file, or remove any BirdNET-Go systemd drop-ins.
@@ -298,8 +284,6 @@ sudo systemctl restart birdnet-go
 ├── install.sh               # Raspberry Pi installer
 ├── kiosk_launcher.sh        # Chromium kiosk launcher
 ├── scripts/
-│   ├── build_display_image_cache.py # Creates optimized WebP display copies
-│   ├── cache_avicommons_images.py   # Caches attributed Avicommons photos
 │   └── configure_birdnet_go_networking.sh
 ├── requirements.txt         # Python dependencies
 ├── run.sh                   # App runner
@@ -362,7 +346,7 @@ Main build hardware used:
 ## Troubleshooting
 
 - If the UI does not load, confirm `static/index.html` exists beside `birdnet_display.py`.
-- If bird photos do not appear after adding or uploading images, run `python scripts/build_display_image_cache.py` and refresh the browser page.
+- If bird photos do not appear, rebuild the cache with `python cache_builder.py`.
 - If the app does not start on boot, check the service status and journal logs.
 - If audio clips do not play, confirm the extracted BirdNET audio files exist under `BIRDNET_AUDIO_DIR`.
 - If fan or brightness controls fail, confirm the Raspberry Pi hardware paths and sudo permissions match this setup.
